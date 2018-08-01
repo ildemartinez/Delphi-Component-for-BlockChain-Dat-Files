@@ -6,15 +6,24 @@ uses
   System.Classes;
 
 type
-  TFoundBlockNotify = procedure(Sender: TComponent; const FileName: string)
+  TBlockRecord = record
+    aMagic, asize, time, bits, nonce, headerLenght, versionNumber: cardinal;
+      aPreviousBlockHash: string[32];
+  aMerkleRoot: string[32];
+  end;
+
+  TFoundFileBlockNotify = procedure(Sender: TComponent; const FileName: string)
     of object;
+  TFoundBlockNotify = procedure(Sender: TComponent; const aBlock: TBlockRecord)
+    of object;
+
   TEndFoundBlocksNotify = procedure(Sender: TComponent) of object;
 
   TBlocks = class(TComponent)
   private
-    fOnFoundBlock: TFoundBlockNotify;
+    fOnFoundBlock: TFoundFileBlockNotify;
     fOnEndFoundBlocks: TEndFoundBlocksNotify;
-    fOnMagicBlockFound: TEndFoundBlocksNotify;
+    fOnMagicBlockFound: TFoundBlockNotify;
 
     procedure InternalProcessBlock(const afs: TBufferedFileStream);
   public
@@ -25,9 +34,9 @@ type
     procedure FindBlocks(const aBlocksDirectory: string);
     procedure ProcessBlock(const aBlockFileName: string);
 
-    property OnFoundBlock: TFoundBlockNotify read fOnFoundBlock
+    property OnFoundBlock: TFoundFileBlockNotify read fOnFoundBlock
       write fOnFoundBlock;
-    property OnMagicBlockFound: TEndFoundBlocksNotify read fOnMagicBlockFound
+    property OnMagicBlockFound: TFoundBlockNotify read fOnMagicBlockFound
       write fOnMagicBlockFound;
     property OnEndFoundBlocks: TEndFoundBlocksNotify read fOnEndFoundBlocks
       write fOnEndFoundBlocks;
@@ -71,7 +80,13 @@ procedure TBlocks.InternalProcessBlock(const afs: TBufferedFileStream);
 var
   k: integer;
   state, car: byte;
-  headerLenght, versionNumber : integer;
+
+  atime: tdatetime;
+
+  aBlock: TBlockRecord;
+
+  aMagic, asize, time, bits, nonce, headerLenght, versionNumber: cardinal;
+  atxCount: byte;
 begin
   state := 0;
 
@@ -80,10 +95,10 @@ begin
 
     case state of
       0:
-        if car = $f9 then
+        if car = $F9 then
           inc(state);
       1:
-        if car = $Be then
+        if car = $BE then
           inc(state)
         else
           state := 0;
@@ -93,23 +108,44 @@ begin
         else
           state := 0;
       3:
-        if car = $d9 then
+        if car = $D9 then
         begin
-          if assigned(OnMagicBlockFound) then
-            OnMagicBlockFound(self);
 
+          // Header Lenght
           afs.Read(headerLenght, 4);
-          headerLenght := system.Swap(headerLenght);
-          afs.Read(versionNumber,4);
 
-         // showmessage(inttostr(versionnumber));
+          // Version number
+          afs.Read(aBlock.versionNumber, 4);
+
+          // Previous block
+          afs.Read(aBlock.aPreviousBlockHash, 32);
+
+          // Merkle root
+          afs.Read(aBlock.aMerkleRoot, 32);
+
+          // Time, bits and nonce
+          afs.Read(time, 4);
+          afs.Read(bits, 4);
+          afs.Read(nonce, 4);
+
+          // tx count
+          afs.Read(atxCount, 1);
+          if atxCount <= $FC then
+          begin
+
+          end;
+
+          // Fire the block found event
+          if assigned(OnMagicBlockFound) then
+            OnMagicBlockFound(self, aBlock);
+
+          // showmessage(inttostr(versionnumber));
           inc(state);
           state := 0;
 
         end;
       4:
         begin
-
 
         end;
 

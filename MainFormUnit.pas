@@ -19,7 +19,7 @@ type
   protected
     procedure FoundBlock(Sender : TComponent; const FileName : string);
     procedure FoundAllBlocks(Sender : TComponent);
-    procedure FoundMagicBlock(Sender : TComponent);
+    procedure FoundMagicBlock(Sender: TComponent; const aBlock: TBlockRecord);
 
   public
     { Public declarations }
@@ -40,7 +40,7 @@ begin
   aBlocks := TBlocks.Create(self);
   aBlocks.OnFoundBlock := FoundBlock;
   aBlocks.OnEndFoundBlocks := FoundAllBlocks;
-  aBlocks.OnMagicBlockFound := self.FoundMagicBlock;
+  aBlocks.OnMagicBlockFound := FoundMagicBlock;
 end;
 
 procedure TForm2.FormActivate(Sender: TObject);
@@ -60,9 +60,9 @@ begin
   aBlocks.ProcessBlock(Filename);
 end;
 
-procedure TForm2.FoundMagicBlock(Sender: TComponent);
+procedure TForm2.FoundMagicBlock(Sender: TComponent; const aBlock: TBlockRecord);
 begin
-  Memo1.Lines.Add('magic');
+  Memo1.Lines.Add(inttostr(aBlock.versionNumber));
 end;
 
 end.
