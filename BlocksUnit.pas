@@ -6,16 +6,22 @@ uses
   System.Classes;
 
 type
+  T32 = string[32];
+
   TBlockRecord = record
-    aMagic, asize, time, bits, nonce, headerLenght, versionNumber: cardinal;
-      aPreviousBlockHash: string[32];
-  aMerkleRoot: string[32];
+    aMagic, asize, bits, nonce, headerLenght, versionNumber: cardinal;
+    aPreviousBlockHash: T32;
+    aMerkleRoot: T32;
+    time: TDateTime;
+
+    ninputs, noutputs: byte;
+    nValue: UInt64;
   end;
 
   TFoundFileBlockNotify = procedure(Sender: TComponent; const FileName: string)
     of object;
-  TFoundBlockNotify = procedure(Sender: TComponent; const aBlock: TBlockRecord)
-    of object;
+  TFoundBlockNotify = procedure(Sender: TComponent; const aBlock: TBlockRecord;
+    var findnext: boolean) of object;
 
   TEndFoundBlocksNotify = procedure(Sender: TComponent) of object;
 
@@ -46,7 +52,7 @@ implementation
 
 uses
   WinApi.Windows,
-  SysUtils, dialogs;
+  SysUtils, dialogs, dateutils;
 
 constructor TBlocks.Create(Owner: TComponent);
 begin
@@ -66,7 +72,7 @@ begin
       if assigned(fOnFoundBlock) then
         fOnFoundBlock(self, aBlocksDirectory + '\' + searchResult.Name);
 
-    until FindNext(searchResult) <> 0;
+    until findnext(searchResult) <> 0;
 
     // Must free up resources used by these successful finds
     FindClose(searchResult);
@@ -81,16 +87,22 @@ var
   k: integer;
   state, car: byte;
 
-  atime: tdatetime;
-
   aBlock: TBlockRecord;
+  cont: boolean;
 
-  aMagic, asize, time, bits, nonce, headerLenght, versionNumber: cardinal;
-  atxCount: byte;
+  aMagic, asize, time, bits, nonce, headerLenght, versionNumber, aVOUT,
+    atxVersion, aseq: cardinal;
+  atxCount, inputCount, aScriptSigSize: byte;
+  aTXID: T32;
+  temp: string[255];
+  aTime: cardinal;
+
+  alocktime: cardinal;
 begin
   state := 0;
+  cont := true;
 
-  while afs.Read(car, 1) = 1 do
+  while (cont = true) and (afs.Read(car, 1) = 1) do
   begin
 
     case state of
@@ -124,20 +136,41 @@ begin
           afs.Read(aBlock.aMerkleRoot, 32);
 
           // Time, bits and nonce
-          afs.Read(time, 4);
-          afs.Read(bits, 4);
-          afs.Read(nonce, 4);
+          afs.Read(aTime, 4);
+          aBlock.time := UnixToDateTime(aTime);
+
+          afs.Read(aBlock.bits, 4);
+          afs.Read(aBlock.nonce, 4);
+          //
 
           // tx count
           afs.Read(atxCount, 1);
           if atxCount <= $FC then
           begin
+            // Read the transaction version
+            afs.Read(atxVersion, 4);
+            // Read the inputs
+            afs.Read(aBlock.ninputs, 1);
 
-          end;
+            afs.Read(aTXID, 32);
+            afs.Read(aVOUT, 4);
+
+            afs.Read(aScriptSigSize, 1);
+            afs.Read(temp, aScriptSigSize);
+            afs.Read(aseq, 4);
+
+            afs.Read(aBlock.noutputs, 1);
+            afs.Read(aBlock.nValue, 8);
+            afs.Read(aScriptSigSize, 1);
+            afs.Read(temp, aScriptSigSize);
+            afs.Read(alocktime, 4);
+          end
+          else
+            showmessage('uno');
 
           // Fire the block found event
           if assigned(OnMagicBlockFound) then
-            OnMagicBlockFound(self, aBlock);
+            OnMagicBlockFound(self, aBlock, cont);
 
           // showmessage(inttostr(versionnumber));
           inc(state);
@@ -157,10 +190,6 @@ end;
 
 procedure TBlocks.ProcessBlock(const aBlockFileName: string);
 var
-  aFileHandle, aFileLength, iBytesRead: integer;
-  Buffer: Pchar;
-  car: byte;
-  k: integer;
   afs: TBufferedFileStream;
 begin
   afs := TBufferedFileStream.Create(aBlockFileName, fmOpenRead);

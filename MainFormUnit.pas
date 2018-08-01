@@ -3,7 +3,8 @@ unit MainFormUnit;
 interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
+  System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
 
   BlocksUnit, Vcl.StdCtrls;
@@ -14,16 +15,17 @@ type
     procedure FormActivate(Sender: TObject);
   private
     { Private declarations }
-    aBlocks : TBlocks;
+    aBlocks: TBlocks;
 
   protected
-    procedure FoundBlock(Sender : TComponent; const FileName : string);
-    procedure FoundAllBlocks(Sender : TComponent);
-    procedure FoundMagicBlock(Sender: TComponent; const aBlock: TBlockRecord);
+    procedure FoundBlock(Sender: TComponent; const FileName: string);
+    procedure FoundAllBlocks(Sender: TComponent);
+    procedure FoundMagicBlock(Sender: TComponent; const aBlock: TBlockRecord;
+      var findnext: boolean);
 
   public
     { Public declarations }
-    constructor Create(Owner : TComponent); override;
+    constructor Create(Owner: TComponent); override;
   end;
 
 var
@@ -56,13 +58,28 @@ end;
 
 procedure TForm2.FoundBlock(Sender: TComponent; const FileName: string);
 begin
-  memo1.Lines.Add(FileName);
-  aBlocks.ProcessBlock(Filename);
+  Memo1.Lines.Add(FileName);
+  aBlocks.ProcessBlock(FileName);
 end;
 
-procedure TForm2.FoundMagicBlock(Sender: TComponent; const aBlock: TBlockRecord);
+procedure TForm2.FoundMagicBlock(Sender: TComponent; const aBlock: TBlockRecord;
+  var findnext: boolean);
+var
+  st: string;
+  k: Integer;
 begin
-  Memo1.Lines.Add(inttostr(aBlock.versionNumber));
+  st := inttostr(aBlock.ninputs) + ' ' + inttostr(aBlock.noutputs) + ' ' +
+    datetimetostr(aBlock.time) + ' ' + IntToHex(aBlock.bits) + ' ' +
+    inttostr(aBlock.nonce) + ' <' + inttostr(aBlock.nValue) + '> ';
+  for k := 0 to 31 do
+  begin
+    st := st + IntToHex(byte(aBlock.aPreviousBlockHash[k]));
+  end;
+
+  Memo1.Lines.Add(st);
+
+  Application.ProcessMessages;
+  //findnext := false;
 end;
 
 end.
