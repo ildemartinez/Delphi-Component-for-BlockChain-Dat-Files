@@ -21,4 +21,12 @@ object Form2: TForm2
     Height = 345
     TabOrder = 0
   end
+  object ProgressBar1: TProgressBar
+    Left = 40
+    Top = 400
+    Width = 529
+    Height = 17
+    Position = 45
+    TabOrder = 1
+  end
 end

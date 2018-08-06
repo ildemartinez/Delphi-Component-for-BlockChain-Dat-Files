@@ -8,44 +8,74 @@ uses
 type
   T32 = string[32];
 
+  TCrypto = (tcBitcoin);
+  TNet = (tnMainNet, tnTestNet);
+
+  TBlockFile = class(TObject)
+    aFileName: string;
+    afs: TBufferedFileStream;
+  end;
+
   TBlockRecord = record
-    aMagic, asize, bits, nonce, headerLenght, versionNumber: cardinal;
+    n: uint64;
+    blocktype: TCrypto;
+    network: TNet;
+
+    headerLenght: UInt32;
+    aMagic, asize, bits, nonce, versionNumber: UInt32;
     aPreviousBlockHash: T32;
     aMerkleRoot: T32;
     time: TDateTime;
 
-    ninputs, noutputs: byte;
-    nValue: UInt64;
+    ninputs, noutputs: uint64;
+    nValue: uint64;
   end;
 
-  TFoundFileBlockNotify = procedure(Sender: TComponent; const FileName: string)
+  TStartFileBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
     of object;
-  TFoundBlockNotify = procedure(Sender: TComponent; const aBlock: TBlockRecord;
+  TFoundFileBlockNotify = procedure(const aBlockFile: TBlockFile) of object;
+  TEndFileBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
+    of object;
+
+  TFoundBlockNotify = procedure(const aBlock: TBlockRecord;
     var findnext: boolean) of object;
+  TBlockProcessStepNotify = procedure(const aPos, asize: int64) of object;
+  TEndProcessBlockFile = procedure(const aBlockFile: TBlockFile) of object;
 
-  TEndFoundBlocksNotify = procedure(Sender: TComponent) of object;
-
-  TBlocks = class(TComponent)
+  TBlocks = class(TObject)
   private
+    // File block events
+    fOnStartFileBlockFoundNotify: TStartFileBlockFoundNotify;
     fOnFoundBlock: TFoundFileBlockNotify;
-    fOnEndFoundBlocks: TEndFoundBlocksNotify;
-    fOnMagicBlockFound: TFoundBlockNotify;
+    fOnEndFileBlockFoundNotify: TEndFileBlockFoundNotify;
 
-    procedure InternalProcessBlock(const afs: TBufferedFileStream);
+    fOnMagicBlockFound: TFoundBlockNotify;
+    fBlockProcessStep: TBlockProcessStepNotify;
+    fEndProcessBlockFile: TEndProcessBlockFile;
+
+    procedure InternalProcessBlock(const aBlockFile: TBlockFile);
   public
     BlocksDir: string;
 
-    constructor Create(Owner: TComponent); override;
+    constructor Create;
 
     procedure FindBlocks(const aBlocksDirectory: string);
-    procedure ProcessBlock(const aBlockFileName: string);
+    procedure ProcessBlock(const aBlockFile: TBlockFile);
 
+    property OnStartFileBlockFound: TStartFileBlockFoundNotify
+      read fOnStartFileBlockFoundNotify write fOnStartFileBlockFoundNotify;
     property OnFoundBlock: TFoundFileBlockNotify read fOnFoundBlock
       write fOnFoundBlock;
+    property OnEndFileBlockFound: TEndFileBlockFoundNotify
+      read fOnEndFileBlockFoundNotify write fOnEndFileBlockFoundNotify;
+
     property OnMagicBlockFound: TFoundBlockNotify read fOnMagicBlockFound
       write fOnMagicBlockFound;
-    property OnEndFoundBlocks: TEndFoundBlocksNotify read fOnEndFoundBlocks
-      write fOnEndFoundBlocks;
+
+    property OnBlockProcessStep: TBlockProcessStepNotify read fBlockProcessStep
+      write fBlockProcessStep;
+    property OnEndProcessBlockFile: TEndProcessBlockFile
+      read fEndProcessBlockFile write fEndProcessBlockFile;
   end;
 
 implementation
@@ -54,55 +84,97 @@ uses
   WinApi.Windows,
   SysUtils, dialogs, dateutils;
 
-constructor TBlocks.Create(Owner: TComponent);
+constructor TBlocks.Create;
 begin
-  inherited;
 
 end;
 
 procedure TBlocks.FindBlocks(const aBlocksDirectory: string);
 var
   searchResult: TSearchRec;
+  aBlockFile: TBlockFile;
+  aBlockFiles: tstringlist;
+  k: Integer;
 begin
   SetCurrentDir(aBlocksDirectory);
 
   if findfirst('blk?????.dat', faAnyFile, searchResult) = 0 then
   begin
-    repeat
-      if assigned(fOnFoundBlock) then
-        fOnFoundBlock(self, aBlocksDirectory + '\' + searchResult.Name);
+    aBlockFiles := tstringlist.Create;
 
+    repeat
+      aBlockFiles.Add(aBlocksDirectory + '\' + searchResult.Name);
     until findnext(searchResult) <> 0;
 
     // Must free up resources used by these successful finds
     FindClose(searchResult);
 
-    if assigned(fOnEndFoundBlocks) then
-      fOnEndFoundBlocks(self);
+    if assigned(OnStartFileBlockFound) then
+      OnStartFileBlockFound(aBlockFiles);
+
+    for k := 0 to aBlockFiles.Count - 1 do
+    begin
+      aBlockFile := TBlockFile.Create;
+      aBlockFile.aFileName := aBlockFiles[k];
+
+      if assigned(fOnFoundBlock) then
+        fOnFoundBlock(aBlockFile);
+    end;
+
+    if assigned(OnEndFileBlockFound) then
+      OnEndFileBlockFound(aBlockFiles);
   end;
 end;
 
-procedure TBlocks.InternalProcessBlock(const afs: TBufferedFileStream);
+procedure TBlocks.InternalProcessBlock(const aBlockFile: TBlockFile);
 var
-  k: integer;
   state, car: byte;
 
   aBlock: TBlockRecord;
   cont: boolean;
 
-  aMagic, asize, time, bits, nonce, headerLenght, versionNumber, aVOUT,
-    atxVersion, aseq: cardinal;
-  atxCount, inputCount, aScriptSigSize: byte;
+  aVOUT, atxVersion, aseq: longword;
+
   aTXID: T32;
-  temp: string[255];
+  temp: array [0 .. 10240] of byte;
   aTime: cardinal;
+  memStart: PAnsiChar;
 
   alocktime: cardinal;
+
+  varintvalue, k, aScriptSigSize: uint64;
+
+  function ReadVarValue: uint64;
+  var
+    atxCount: UInt8;
+    atxCount2: UInt16;
+    atxCount4: longword;
+  begin
+    aBlockFile.afs.Read(atxCount, 1);
+    if atxCount < $FD then
+      result := atxCount
+    else if atxCount = $FD then
+    begin
+      aBlockFile.afs.Read(atxCount2, 2);
+      result := atxCount2;
+    end
+    else if atxCount = $FE then
+    begin
+      aBlockFile.afs.Read(atxCount4, 4);
+      result := atxCount4;
+    end
+    else if atxCount = $FF then
+    begin
+      aBlockFile.afs.Read(result, 8);
+    end;
+
+  end;
+
 begin
   state := 0;
   cont := true;
 
-  while (cont = true) and (afs.Read(car, 1) = 1) do
+  while (cont = true) and (aBlockFile.afs.Read(car, 1) = 1) do
   begin
 
     case state of
@@ -123,81 +195,96 @@ begin
         if car = $D9 then
         begin
 
+          if assigned(OnBlockProcessStep) then
+            OnBlockProcessStep(aBlockFile.afs.Position, aBlockFile.afs.Size);
+
           // Header Lenght
-          afs.Read(headerLenght, 4);
+          aBlockFile.afs.Read(aBlock.headerLenght, 4);
 
           // Version number
-          afs.Read(aBlock.versionNumber, 4);
+          aBlockFile.afs.Read(aBlock.versionNumber, 4);
 
           // Previous block
-          afs.Read(aBlock.aPreviousBlockHash, 32);
+          aBlockFile.afs.Read(aBlock.aPreviousBlockHash, 32);
 
           // Merkle root
-          afs.Read(aBlock.aMerkleRoot, 32);
+          aBlockFile.afs.Read(aBlock.aMerkleRoot, 32);
 
           // Time, bits and nonce
-          afs.Read(aTime, 4);
+          aBlockFile.afs.Read(aTime, 4);
           aBlock.time := UnixToDateTime(aTime);
 
-          afs.Read(aBlock.bits, 4);
-          afs.Read(aBlock.nonce, 4);
-          //
+          aBlockFile.afs.Read(aBlock.bits, 4);
+          aBlockFile.afs.Read(aBlock.nonce, 4);
 
           // tx count
-          afs.Read(atxCount, 1);
-          if atxCount <= $FC then
+          varintvalue := ReadVarValue;
+
+          while (varintvalue > 0) do
           begin
             // Read the transaction version
-            afs.Read(atxVersion, 4);
+            aBlockFile.afs.Read(atxVersion, 4);
             // Read the inputs
-            afs.Read(aBlock.ninputs, 1);
+            aBlock.ninputs := ReadVarValue;
 
-            afs.Read(aTXID, 32);
-            afs.Read(aVOUT, 4);
+            if aBlock.ninputs > 0 then
 
-            afs.Read(aScriptSigSize, 1);
-            afs.Read(temp, aScriptSigSize);
-            afs.Read(aseq, 4);
+              for k := 0 to aBlock.ninputs - 1 do
+              begin
 
-            afs.Read(aBlock.noutputs, 1);
-            afs.Read(aBlock.nValue, 8);
-            afs.Read(aScriptSigSize, 1);
-            afs.Read(temp, aScriptSigSize);
-            afs.Read(alocktime, 4);
-          end
-          else
-            showmessage('uno');
+                aBlockFile.afs.Read(aTXID, 32);
+                aBlockFile.afs.Read(aVOUT, 4);
+
+                // aBlockFile.afs.Read(aScriptSigSize, 1);
+                aScriptSigSize := ReadVarValue;
+                memStart := AllocMem(aScriptSigSize);
+                aBlockFile.afs.Read(temp, aScriptSigSize);
+                FreeMem(memStart);
+                aBlockFile.afs.Read(aseq, 4);
+              end;
+
+            // tx out count
+            aBlock.noutputs := ReadVarValue;
+
+            if aBlock.noutputs > 0 then
+              for k := 0 to aBlock.noutputs - 1 do
+              begin
+
+                aBlockFile.afs.Read(aBlock.nValue, 8);
+                aScriptSigSize := ReadVarValue;
+
+                // memStart := AllocMem (aScriptSigSize);
+                aBlockFile.afs.Read(temp, aScriptSigSize);
+                // FreeMem(memstart);
+              end;
+            aBlockFile.afs.Read(alocktime, 4);
+            dec(varintvalue);
+          end;
 
           // Fire the block found event
           if assigned(OnMagicBlockFound) then
-            OnMagicBlockFound(self, aBlock, cont);
+            OnMagicBlockFound(aBlock, cont);
 
-          // showmessage(inttostr(versionnumber));
-          inc(state);
           state := 0;
-
-        end;
-      4:
-        begin
 
         end;
 
     end;
 
   end;
-
+  if assigned(OnEndProcessBlockFile) then
+    OnEndProcessBlockFile(aBlockFile);
 end;
 
-procedure TBlocks.ProcessBlock(const aBlockFileName: string);
-var
-  afs: TBufferedFileStream;
+procedure TBlocks.ProcessBlock(const aBlockFile: TBlockFile);
 begin
-  afs := TBufferedFileStream.Create(aBlockFileName, fmOpenRead);
+  aBlockFile.afs := TBufferedFileStream.Create(aBlockFile.aFileName,
+    fmOpenRead);
 
   try
-    InternalProcessBlock(afs);
+    InternalProcessBlock(aBlockFile);
   finally
-    afs.Free;
+    aBlockFile.afs.Free;
   end;
 
 end;
