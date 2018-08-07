@@ -101,48 +101,50 @@ end;
 procedure TForm2.FoundMagicBlock(const aBlock: TBlockRecord;
   var findnext: boolean);
 var
-  st: string;
   k, j: Integer;
 
 begin
   // Memo1.Lines.Add(datetimetostr(UnixToDateTime(aBlock.header.time)));
-  st := '--- ' + inttostr(aBlock.header.bits) + ' ' +
-    inttostr(aBlock.header.nonce) + ' ' +
-    T32ToString(aBlock.header.aPreviousBlockHash);
+  Memo1.Lines.BeginUpdate;
+  Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time))+  ' Bits: ' + aBlock.header.bits.ToString + ' nonce: ' +
+    aBlock.header.nonce.ToString);
+  Memo1.Lines.Add(' Prev. block: ' +
+    T32ToString(aBlock.header.aPreviousBlockHash));
+  Memo1.Lines.Add(' MerkleRoot: ' +
+    T32ToString(aBlock.header.aMerkleRoot));
 
-  Memo1.Lines.Add(st);
-
-  Memo1.Lines.Add('Transactions ' + aBlock.transactions.Count.tostring);
+  Memo1.Lines.Add(' Transactions ' + aBlock.transactions.Count.ToString);
 
   if aBlock.transactions.Count > 4 then
     countt := false;
 
   for k := 0 to aBlock.transactions.Count - 1 do
   begin
-    Memo1.Lines.Add(' version ' + aBlock.transactions[k].version.tostring);
+    Memo1.Lines.Add(' version ' + aBlock.transactions[k].version.ToString);
 
     if aBlock.transactions[k].inputs.Count > 0 then
       for j := 0 to aBlock.transactions[k].inputs.Count - 1 do
       begin
         Memo1.Lines.Add('  input ' + T32ToString(aBlock.transactions[k].inputs
-          [j].aTXID) + ' ' + aBlock.transactions[k].inputs[j].aVOUT.tostring);
+          [j].aTXID) + ' ' + aBlock.transactions[k].inputs[j].aVOUT.ToString);
       end;
 
     if aBlock.transactions[k].outputs.Count > 0 then
       for j := 0 to aBlock.transactions[k].outputs.Count - 1 do
       begin
         Memo1.Lines.Add('  output ' + aBlock.transactions[k].outputs[j]
-          .nValue.tostring);
+          .nValue.ToString);
 
       end;
   end;
 
+  Memo1.Lines.EndUpdate;
 
   // Memo1.Lines.Add(inttostr(n));
   // inc(n);
 
   Application.ProcessMessages;
-  findnext := countt;
+  findnext := false; // countt;
 end;
 
 procedure TForm2.StartFoundFileBlock(const aBlockFiles: tstringlist);

@@ -30,10 +30,16 @@ type
   TInput = class(TObject)
     aTXID: T32;
     aVOUT: UInt32;
+    CoinBase : PByte;
+
+    destructor Destroy; override;
   end;
 
   TOutput = class(TObject)
     nValue: uint64;
+    OutputScript : PByte;
+
+    destructor Destroy; override;
   end;
 
   TInputs = class(TObjectList)
@@ -193,9 +199,6 @@ var
   aInput: TInput;
   aOutput: TOutput;
 
-  temp: array [0 .. 10240] of byte;
-  memStart: PAnsiChar;
-
   alocktime: UInt32;
 
   txCount, k, aScriptSigSize: uint64;
@@ -258,6 +261,7 @@ begin
 
           aBlockFile.afs.Read(aBlock.header, 84);
 
+
           // tx count
           txCount := ReadVarValue;
           if txCount > 1 then
@@ -283,7 +287,8 @@ begin
 
                 aScriptSigSize := ReadVarValue;
 
-                aBlockFile.afs.Read(temp, aScriptSigSize);
+                GetMem(aInput.CoinBase, aScriptSigSize);
+                aBlockFile.afs.Read(aInput.CoinBase^, aScriptSigSize);
 
                 // No need store the seq
                 aBlockFile.afs.Read(aseq, 4);
@@ -300,9 +305,8 @@ begin
                 aBlockFile.afs.Read(aOutput.nValue, 8);
 
                 aScriptSigSize := ReadVarValue;
-                // memStart := AllocMem (aScriptSigSize);
-                aBlockFile.afs.Read(temp, aScriptSigSize);
-                // FreeMem(memstart);
+                GetMem(aOutput.OutputScript, aScriptSigSize);
+                aBlockFile.afs.Read(aOutput.OutputScript^, aScriptSigSize);
               end;
             aBlockFile.afs.Read(alocktime, 4);
             dec(txCount);
@@ -412,10 +416,29 @@ function T32ToString(const at32: T32): string;
 var
   k: integer;
 begin
+  result := '';
   for k := 0 to 31 do
   begin
     result := IntToHex(byte(at32[k])) + result;
   end;
+end;
+
+{ TInput }
+
+destructor TInput.Destroy;
+begin
+  FreeMem(CoinBase);
+
+  inherited;
+end;
+
+{ TOutput }
+
+destructor TOutput.Destroy;
+begin
+  FreeMem(OutputScript);
+
+  inherited;
 end;
 
 end.
