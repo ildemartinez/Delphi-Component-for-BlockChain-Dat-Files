@@ -3,10 +3,11 @@ unit BlocksUnit;
 interface
 
 uses
-  System.Classes;
+  System.Classes,
+  System.Contnrs;
 
 type
-  T32 = string[32];
+  T32 = array [0 .. 31] of byte;
 
   TCrypto = (tcBitcoin);
   TNet = (tnMainNet, tnTestNet);
@@ -16,19 +17,72 @@ type
     afs: TBufferedFileStream;
   end;
 
-  TBlockRecord = record
-    n: uint64;
+  TBlockHeader = record
+    headerLenght: UInt32;
+    versionNumber: UInt32;
+    aPreviousBlockHash: T32; // reverse please
+    aMerkleRoot: T32; // reverse please
+    time: UInt32; // UnixTime
+    bits: UInt32;
+    nonce: UInt32;
+  end;
+
+  TInput = class(TObject)
+    aTXID: T32;
+    aVOUT: UInt32;
+  end;
+
+  TOutput = class(TObject)
+    nValue: uint64;
+  end;
+
+  TInputs = class(TObjectList)
+  private
+    function GetInput(index: integer): TInput;
+  public
+    function NewInput: TInput;
+    property items[index: integer]: TInput read GetInput; default;
+  end;
+
+  TOutputs = class(TObjectList)
+  private
+    function GetOutput(index: integer): TOutput;
+  public
+    function NewOutput: TOutput;
+    property items[index: integer]: TOutput read GetOutput; default;
+  end;
+
+  TTransaction = class(TObject)
+    version: UInt32;
+    inputs: TInputs;
+    outputs: TOutputs;
+
+  public
+    constructor Create;
+    destructor Destroy; override;
+  end;
+
+  TBlockTransactions = class(TObjectList)
+  private
+    function GetTransaction(index: integer): TTransaction;
+  public
+    function NewTransaction: TTransaction;
+    property items[index: integer]: TTransaction read GetTransaction; default;
+  end;
+
+  TBlockRecord = class(TObject)
+    nblock: uint64;
     blocktype: TCrypto;
     network: TNet;
 
-    headerLenght: UInt32;
-    aMagic, asize, bits, nonce, versionNumber: UInt32;
-    aPreviousBlockHash: T32;
-    aMerkleRoot: T32;
-    time: TDateTime;
+    header: TBlockHeader;
+    transactions: TBlockTransactions;
 
     ninputs, noutputs: uint64;
-    nValue: uint64;
+
+  public
+    constructor Create;
+    destructor Destroy; override;
   end;
 
   TStartFileBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
@@ -78,6 +132,8 @@ type
       read fEndProcessBlockFile write fEndProcessBlockFile;
   end;
 
+function T32ToString(const at32: T32): string;
+
 implementation
 
 uses
@@ -94,7 +150,7 @@ var
   searchResult: TSearchRec;
   aBlockFile: TBlockFile;
   aBlockFiles: tstringlist;
-  k: Integer;
+  k: integer;
 begin
   SetCurrentDir(aBlocksDirectory);
 
@@ -111,8 +167,8 @@ begin
 
     if assigned(OnStartFileBlockFound) then
       OnStartFileBlockFound(aBlockFiles);
-
-    for k := 0 to aBlockFiles.Count - 1 do
+    k := 0;
+    // for k := 0 to aBlockFiles.Count - 1 do
     begin
       aBlockFile := TBlockFile.Create;
       aBlockFile.aFileName := aBlockFiles[k];
@@ -132,17 +188,17 @@ var
 
   aBlock: TBlockRecord;
   cont: boolean;
+  aTransaction: TTransaction;
+  aseq: longword;
+  aInput: TInput;
+  aOutput: TOutput;
 
-  aVOUT, atxVersion, aseq: longword;
-
-  aTXID: T32;
   temp: array [0 .. 10240] of byte;
-  aTime: cardinal;
   memStart: PAnsiChar;
 
-  alocktime: cardinal;
+  alocktime: UInt32;
 
-  varintvalue, k, aScriptSigSize: uint64;
+  txCount, k, aScriptSigSize: uint64;
 
   function ReadVarValue: uint64;
   var
@@ -198,32 +254,21 @@ begin
           if assigned(OnBlockProcessStep) then
             OnBlockProcessStep(aBlockFile.afs.Position, aBlockFile.afs.Size);
 
-          // Header Lenght
-          aBlockFile.afs.Read(aBlock.headerLenght, 4);
+          aBlock := TBlockRecord.Create;
 
-          // Version number
-          aBlockFile.afs.Read(aBlock.versionNumber, 4);
-
-          // Previous block
-          aBlockFile.afs.Read(aBlock.aPreviousBlockHash, 32);
-
-          // Merkle root
-          aBlockFile.afs.Read(aBlock.aMerkleRoot, 32);
-
-          // Time, bits and nonce
-          aBlockFile.afs.Read(aTime, 4);
-          aBlock.time := UnixToDateTime(aTime);
-
-          aBlockFile.afs.Read(aBlock.bits, 4);
-          aBlockFile.afs.Read(aBlock.nonce, 4);
+          aBlockFile.afs.Read(aBlock.header, 84);
 
           // tx count
-          varintvalue := ReadVarValue;
+          txCount := ReadVarValue;
+          if txCount > 1 then
+            txCount := txCount;
 
-          while (varintvalue > 0) do
+          while (txCount > 0) do
           begin
+            aTransaction := aBlock.transactions.NewTransaction;
+
             // Read the transaction version
-            aBlockFile.afs.Read(atxVersion, 4);
+            aBlockFile.afs.Read(aTransaction.version, 4);
             // Read the inputs
             aBlock.ninputs := ReadVarValue;
 
@@ -231,15 +276,16 @@ begin
 
               for k := 0 to aBlock.ninputs - 1 do
               begin
+                aInput := aTransaction.inputs.NewInput;
 
-                aBlockFile.afs.Read(aTXID, 32);
-                aBlockFile.afs.Read(aVOUT, 4);
+                aBlockFile.afs.Read(aInput.aTXID, 32);
+                aBlockFile.afs.Read(aInput.aVOUT, 4);
 
-                // aBlockFile.afs.Read(aScriptSigSize, 1);
                 aScriptSigSize := ReadVarValue;
-                memStart := AllocMem(aScriptSigSize);
+
                 aBlockFile.afs.Read(temp, aScriptSigSize);
-                FreeMem(memStart);
+
+                // No need store the seq
                 aBlockFile.afs.Read(aseq, 4);
               end;
 
@@ -249,21 +295,25 @@ begin
             if aBlock.noutputs > 0 then
               for k := 0 to aBlock.noutputs - 1 do
               begin
+                aOutput := aTransaction.outputs.NewOutput;
 
-                aBlockFile.afs.Read(aBlock.nValue, 8);
+                aBlockFile.afs.Read(aOutput.nValue, 8);
+
                 aScriptSigSize := ReadVarValue;
-
                 // memStart := AllocMem (aScriptSigSize);
                 aBlockFile.afs.Read(temp, aScriptSigSize);
                 // FreeMem(memstart);
               end;
             aBlockFile.afs.Read(alocktime, 4);
-            dec(varintvalue);
+            dec(txCount);
           end;
 
           // Fire the block found event
           if assigned(OnMagicBlockFound) then
             OnMagicBlockFound(aBlock, cont);
+
+          // Free the block so user must copy or use it and forget
+          aBlock.Free;
 
           state := 0;
 
@@ -272,8 +322,10 @@ begin
     end;
 
   end;
-  if assigned(OnEndProcessBlockFile) then
-    OnEndProcessBlockFile(aBlockFile);
+
+  if (cont = true) then
+    if assigned(OnEndProcessBlockFile) then
+      OnEndProcessBlockFile(aBlockFile);
 end;
 
 procedure TBlocks.ProcessBlock(const aBlockFile: TBlockFile);
@@ -287,6 +339,83 @@ begin
     aBlockFile.afs.Free;
   end;
 
+end;
+
+{ TBlockRecord }
+
+constructor TBlockRecord.Create;
+begin
+  transactions := TBlockTransactions.Create;
+end;
+
+destructor TBlockRecord.Destroy;
+begin
+  transactions.Free;
+
+  inherited;
+end;
+
+{ TBlockTransactions }
+
+function TBlockTransactions.GetTransaction(index: integer): TTransaction;
+begin
+  result := inherited items[index] as TTransaction;
+end;
+
+function TBlockTransactions.NewTransaction: TTransaction;
+begin
+  result := TTransaction.Create;
+  self.Add(result);
+end;
+
+{ TTransaction }
+
+constructor TTransaction.Create;
+begin
+  inputs := TInputs.Create;
+  outputs := TOutputs.Create;
+end;
+
+destructor TTransaction.Destroy;
+begin
+  inputs.Free;
+  outputs.Free;
+end;
+
+{ TOutputs }
+
+function TOutputs.GetOutput(index: integer): TOutput;
+begin
+  result := TOutput(inherited items[index]);
+end;
+
+function TOutputs.NewOutput: TOutput;
+begin
+  result := TOutput.Create;
+  self.Add(result);
+end;
+
+{ TInputs }
+
+function TInputs.GetInput(index: integer): TInput;
+begin
+  result := TInput(inherited items[index]);
+end;
+
+function TInputs.NewInput: TInput;
+begin
+  result := TInput.Create;
+  self.Add(result);
+end;
+
+function T32ToString(const at32: T32): string;
+var
+  k: integer;
+begin
+  for k := 0 to 31 do
+  begin
+    result := IntToHex(byte(at32[k])) + result;
+  end;
 end;
 
 end.

@@ -13,14 +13,17 @@ type
   TForm2 = class(TForm)
     Memo1: TMemo;
     ProgressBar1: TProgressBar;
+    pbFiles: TProgressBar;
+    Button1: TButton;
     procedure FormActivate(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
   private
     { Private declarations }
     aBlocks: TBlocks;
-    n: uint64;
+    // n: uint64;
   protected
-    procedure StartFoundFileBlock(const aBlockFiles : tstringlist);
-    procedure EndFoundFileBlock(const aBlockFiles : tstringlist);
+    procedure StartFoundFileBlock(const aBlockFiles: tstringlist);
+    procedure EndFoundFileBlock(const aBlockFiles: tstringlist);
     procedure FoundBlock(const aBlockFile: TBlockFile);
 
     procedure FoundMagicBlock(const aBlock: TBlockRecord;
@@ -30,6 +33,7 @@ type
 
   public
     { Public declarations }
+    countt: boolean;
     constructor Create(Owner: TComponent); override;
   end;
 
@@ -38,6 +42,8 @@ var
 
 implementation
 
+uses
+  dateutils;
 {$R *.dfm}
 
 procedure TForm2.BlockProcessStep(const aPos, aSize: int64);
@@ -46,10 +52,15 @@ begin
   ProgressBar1.Position := aPos;
 end;
 
+procedure TForm2.Button1Click(Sender: TObject);
+begin
+  countt := false
+end;
+
 constructor TForm2.Create(Owner: TComponent);
 begin
   inherited;
-
+  countt := true;
   aBlocks := TBlocks.Create;
   aBlocks.OnStartFileBlockFound := StartFoundFileBlock;
   aBlocks.OnFoundBlock := FoundBlock;
@@ -60,10 +71,10 @@ begin
   aBlocks.OnBlockProcessStep := BlockProcessStep;
   aBlocks.OnEndProcessBlockFile := EndProcessBlockFile;
 
-  n := 0;
+  // n := 0;
 end;
 
-procedure TForm2.EndFoundFileBlock(const aBlockFiles : tstringlist);
+procedure TForm2.EndFoundFileBlock(const aBlockFiles: tstringlist);
 begin
   aBlockFiles.Free;
 end;
@@ -78,43 +89,67 @@ begin
   aBlocks.FindBlocks('C:\Users\ilde\AppData\Roaming\Bitcoin\blocks');
 end;
 
-
-
 procedure TForm2.FoundBlock(const aBlockFile: TBlockFile);
 begin
-  // Memo1.Lines.Add(FileName);
-  aBlocks.ProcessBlock(aBlockFile);
+  Memo1.Lines.Add(aBlockFile.aFileName);
+  pbFiles.StepIt;
 
+  aBlocks.ProcessBlock(aBlockFile);
   aBlockFile.Free;
 end;
 
 procedure TForm2.FoundMagicBlock(const aBlock: TBlockRecord;
   var findnext: boolean);
-{var
+var
   st: string;
-  k: Integer; }
+  k, j: Integer;
 
 begin
-  { st := inttostr(aBlock.ninputs) + ' ' + inttostr(aBlock.noutputs) + ' ' +
-    datetimetostr(aBlock.time) + ' ' + IntToHex(aBlock.bits) + ' ' +
-    inttostr(aBlock.nonce) + ' <' + inttostr(aBlock.nValue) + '> ';
-    for k := 0 to 31 do
-    begin
-    st := st + IntToHex(byte(aBlock.aPreviousBlockHash[k]));
-    end;
+  // Memo1.Lines.Add(datetimetostr(UnixToDateTime(aBlock.header.time)));
+  st := '--- ' + inttostr(aBlock.header.bits) + ' ' +
+    inttostr(aBlock.header.nonce) + ' ' +
+    T32ToString(aBlock.header.aPreviousBlockHash);
 
-    Memo1.Lines.Add(st);
-  }
-  //Memo1.Lines.Add(inttostr(n));
-  inc(n);
+  Memo1.Lines.Add(st);
+
+  Memo1.Lines.Add('Transactions ' + aBlock.transactions.Count.tostring);
+
+  if aBlock.transactions.Count > 4 then
+    countt := false;
+
+  for k := 0 to aBlock.transactions.Count - 1 do
+  begin
+    Memo1.Lines.Add(' version ' + aBlock.transactions[k].version.tostring);
+
+    if aBlock.transactions[k].inputs.Count > 0 then
+      for j := 0 to aBlock.transactions[k].inputs.Count - 1 do
+      begin
+        Memo1.Lines.Add('  input ' + T32ToString(aBlock.transactions[k].inputs
+          [j].aTXID) + ' ' + aBlock.transactions[k].inputs[j].aVOUT.tostring);
+      end;
+
+    if aBlock.transactions[k].outputs.Count > 0 then
+      for j := 0 to aBlock.transactions[k].outputs.Count - 1 do
+      begin
+        Memo1.Lines.Add('  output ' + aBlock.transactions[k].outputs[j]
+          .nValue.tostring);
+
+      end;
+  end;
+
+
+  // Memo1.Lines.Add(inttostr(n));
+  // inc(n);
 
   Application.ProcessMessages;
-  // findnext := false;
+  findnext := countt;
 end;
 
-procedure TForm2.StartFoundFileBlock(const aBlockFiles : tstringlist);
+procedure TForm2.StartFoundFileBlock(const aBlockFiles: tstringlist);
 begin
-
+  pbFiles.Min := 0;
+  pbFiles.Max := aBlockFiles.Count;
+  pbFiles.Step := 1;
 end;
 
 end.
