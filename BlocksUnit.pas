@@ -88,6 +88,7 @@ type
     network: TNet;
 
     headerLenght: UInt32;
+    hash: string;
     header: TBlockHeader;
     transactions: TBlockTransactions;
 
@@ -153,7 +154,7 @@ implementation
 uses
   WinApi.Windows,
   SysUtils, dialogs, dateutils,
-  System.hash, SeSHA256, MainFormUnit;
+  SeSHA256, MainFormUnit, System.hash;
 
 constructor TBlocks.Create;
 begin
@@ -213,18 +214,11 @@ var
   aOutput: TOutput;
 
   tb: tbytes;
-  ss: string;
-var
-  myHashSHA: THashSHA2;
 
+var
   alocktime: UInt32;
-  m: string;
-  txCount, k, j: uint64;
-  b: byte;
-  headerstring: string;
-  test, test2: string;
-  hash: string;
-  msg, msg2: ShortString;
+  txCount, k: uint64;
+  msg: ansistring;
 
   function ReadVarValue: uint64;
   var
@@ -284,29 +278,22 @@ begin
 
           aBlockFile.afs.Read(aBlock.headerLenght, 4);
 
+          // Read the header fields
           aBlockFile.afs.Read(aBlock.header, 80);
+
+          // Re-read the header to calculate hash
           aBlockFile.afs.Seek(-80, soCurrent);
           setlength(tb, 80);
           aBlockFile.afs.Read(tb, 80);
 
+          // Convert TBytes to string
           msg := '';
-          for k := 0 to 79 do
-          begin
+          for k := 0 to length(tb) - 1 do
             msg := msg + ansichar(tb[k]);
-          end;
 
-          hash := SHA256ToStr(CalcSHA256(msg));
-          MainFormUnit.Form2.memo1.lines.Add(hash);
-          MainFormUnit.Form2.memo1.lines.Add('-----');
-
-          setlength(tb, 32);
-          for k := 0 to 63 do
-          begin
-            ss := '$' + IntToStr(int(hash[(k + 1) * 2]) +
-              IntToStr(byte(hash[(k + 2) * 2]));
-            // b := byte(StrToInt('$'+hash[(k*2)]+hash[(k*2)+1]));
-
-          end;
+          // double header hash
+          aBlock.hash :=
+            SHA256ToStr(CalcSHA256(SHA256ToBinaryStr(CalcSHA256(msg))));
 
           // tx count
           txCount := ReadVarValue;

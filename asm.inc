@@ -52,7 +52,7 @@
       ((x and $FF000000) shr 24);
   end;
 
-  function swap64(x: int64): int64;
+  function swap64(x: uint64): uint64;
   begin
     swap64:=
       ((x and $00000000000000FF) shl 56) +

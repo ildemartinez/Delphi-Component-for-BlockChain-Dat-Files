@@ -19,7 +19,7 @@ function CalcSHA256(Stream: TStream): TSHA256HASH; overload;
 // Convierte el hash en una cadena de texto
 function SHA256ToStr(Hash: TSHA256HASH): String;
 
-function SHA256ToBinaryStr(Hash: TSHA256HASH): String;
+function SHA256ToBinaryStr(Hash: TSHA256HASH): ansistring;
 
 implementation
 
@@ -180,16 +180,16 @@ begin
   Result := Result + IntToHex(Hash[7], 8);
 end;
 
-function SHA256ToBinaryStr(Hash: TSHA256HASH): String;
+function SHA256ToBinaryStr(Hash: TSHA256HASH): ansistring;
 var
   i: Integer;
-  temp: AnsiString;
+  temp: string;
 begin
   temp := EmptyStr;
   for i := 0 to 7 do
     temp := temp + IntToHex(Hash[i], 8);
 
-  Result := EmptyStr;
+  Result := '';
   for i := 0 to 31 do
   begin
     Result := Result + ansichar

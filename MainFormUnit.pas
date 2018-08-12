@@ -7,7 +7,7 @@ uses
   System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
 
-  BlocksUnit, Vcl.StdCtrls, Vcl.ComCtrls;
+  BlocksUnit, Vcl.StdCtrls, Vcl.ComCtrls, System.Diagnostics, System.TimeSpan;
 
 type
   TForm2 = class(TForm)
@@ -16,10 +16,16 @@ type
     pbFiles: TProgressBar;
     Button1: TButton;
     procedure FormActivate(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
   private
     { Private declarations }
     aBlocks: TBlocks;
-    // n: uint64;
+    co: boolean;
+    nblocks: uint64;
+
+    Stopwatch: TStopwatch;
+    TimeSpan: TTimeSpan;
+
   protected
     procedure StartFoundFileBlock(const aBlockFiles: tstringlist);
     procedure EndFoundFileBlock(const aBlockFiles: tstringlist);
@@ -50,9 +56,16 @@ begin
   ProgressBar1.Position := aPos;
 end;
 
+procedure TForm2.Button1Click(Sender: TObject);
+begin
+  co := false;
+end;
+
 constructor TForm2.Create(Owner: TComponent);
 begin
   inherited;
+
+  co := true;
 
   aBlocks := TBlocks.Create;
   aBlocks.OnStartFileBlockFound := StartFoundFileBlock;
@@ -66,7 +79,13 @@ begin
 end;
 
 procedure TForm2.EndFoundFileBlock(const aBlockFiles: tstringlist);
+var
+  nbsec: double;
 begin
+  TimeSpan := Stopwatch.Elapsed;
+  nbsec := nblocks / TimeSpan.TotalSeconds;
+  Memo1.Lines.Add(nbsec.ToString);
+
   aBlockFiles.Free;
 end;
 
@@ -88,69 +107,79 @@ begin
   aBlocks.ProcessBlock(aBlockFile);
   aBlockFile.Free;
 
-  next := true;
+  next := false;
 end;
 
 procedure TForm2.FoundMagicBlock(const aBlock: TBlockRecord;
   var findnext: boolean);
 var
   k, j, i: Integer;
-  t: ansistring;
+  t: string;
 begin
-                      findnext := false;
-                      exit;
+  // Performance
+  inc(nblocks);
 
-  Memo1.Lines.BeginUpdate;
-  Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: '
-    + aBlock.header.DifficultyTarget.ToString + ' nonce: ' + aBlock.header.nonce.ToString);
-  Memo1.Lines.Add(' Prev. block: ' +
+  {
+
+    Memo1.Lines.BeginUpdate;
+    Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: '
+    + aBlock.header.DifficultyTarget.ToString + ' nonce: ' +
+    aBlock.header.nonce.ToString);
+    Memo1.Lines.Add(' Hash: ' + aBlock.hash);
+    Memo1.Lines.Add(' Prev. block: ' +
     T32ToString(aBlock.header.aPreviousBlockHash));
-  Memo1.Lines.Add(' MerkleRoot: ' + T32ToString(aBlock.header.aMerkleRoot));
+    Memo1.Lines.Add(' MerkleRoot: ' + T32ToString(aBlock.header.aMerkleRoot));
 
-  Memo1.Lines.Add(' Transactions ' + aBlock.transactions.Count.ToString);
+    Memo1.Lines.Add(' Transactions ' + aBlock.transactions.Count.ToString);
 
-  for k := 0 to aBlock.transactions.Count - 1 do
-  begin
+    for k := 0 to aBlock.transactions.Count - 1 do
+    begin
     Memo1.Lines.Add(' version ' + aBlock.transactions[k].version.ToString);
 
     if aBlock.transactions[k].inputs.Count > 0 then
-      for j := 0 to aBlock.transactions[k].inputs.Count - 1 do
-      begin
-        Memo1.Lines.Add('  input ' + T32ToString(aBlock.transactions[k].inputs
-          [j].aTXID) + ' ' + aBlock.transactions[k].inputs[j].aVOUT.ToString);
+    for j := 0 to aBlock.transactions[k].inputs.Count - 1 do
+    begin
+    Memo1.Lines.Add('  input ' + T32ToString(aBlock.transactions[k].inputs
+    [j].aTXID) + ' ' + aBlock.transactions[k].inputs[j].aVOUT.ToString);
 
-        t := '';
-        for i := 0 to aBlock.transactions[k].inputs[j].CoinBaseLength - 1 do
-        begin
-          t := t + IntToHex(aBlock.transactions[k].inputs[j].CoinBase[i]);
-        end;
-        Memo1.Lines.Add(' Coinbase: '+t);
+    t := '';
+    for i := 0 to aBlock.transactions[k].inputs[j].CoinBaseLength - 1 do
+    begin
+    t := t + IntToHex(aBlock.transactions[k].inputs[j].CoinBase[i]);
+    end;
+    Memo1.Lines.Add(' Coinbase: ' + t);
 
-      end;
+    end;
 
     if aBlock.transactions[k].outputs.Count > 0 then
-      for j := 0 to aBlock.transactions[k].outputs.Count - 1 do
-      begin
-        Memo1.Lines.Add('  output ' + aBlock.transactions[k].outputs[j]
-          .nValue.ToString);
+    for j := 0 to aBlock.transactions[k].outputs.Count - 1 do
+    begin
+    Memo1.Lines.Add('  output ' + aBlock.transactions[k].outputs[j]
+    .nValue.ToString);
 
-           t := '';
-        for i := 0 to aBlock.transactions[k].outputs[j].OutputScriptLength - 1 do
-        begin
-          t := t + IntToHex(aBlock.transactions[k].outputs[j].OutputScript[i]);
-        end;
-        Memo1.Lines.Add(' Outputscript: '+t);
-      end;
-  end;
+    t := '';
+    for i := 0 to aBlock.transactions[k].outputs[j]
+    .OutputScriptLength - 1 do
+    begin
+    t := t + IntToHex(aBlock.transactions[k].outputs[j].OutputScript[i]);
+    end;
+    Memo1.Lines.Add(' Outputscript: ' + t);
+    end;
+    end;
 
-  Memo1.Lines.EndUpdate;
+    Memo1.Lines.EndUpdate;
+  }
 
   Application.ProcessMessages;
-  findnext := false;
+  findnext := co;
 end;
 
 procedure TForm2.StartFoundFileBlock(const aBlockFiles: tstringlist);
 begin
+  nblocks := 0;
+
+  Stopwatch := TStopwatch.StartNew;
+
   pbFiles.Min := 0;
   pbFiles.Max := aBlockFiles.Count;
   pbFiles.Step := 1;

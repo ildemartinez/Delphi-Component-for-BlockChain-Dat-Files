@@ -4,7 +4,7 @@ uses
   Vcl.Forms,
   MainFormUnit in 'MainFormUnit.pas' {Form2},
   BlocksUnit in 'BlocksUnit.pas',
-  SeSHA256 in 'C:\Users\ilde\Desktop\secrypt-master\SeCrypt\SeSHA256.pas';
+  SeSHA256 in 'SeSHA256.pas';
 
 {$R *.res}
 
