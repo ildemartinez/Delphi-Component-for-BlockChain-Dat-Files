@@ -16,7 +16,6 @@ type
     pbFiles: TProgressBar;
     Button1: TButton;
     procedure FormActivate(Sender: TObject);
-    procedure Button1Click(Sender: TObject);
   private
     { Private declarations }
     aBlocks: TBlocks;
@@ -24,7 +23,7 @@ type
   protected
     procedure StartFoundFileBlock(const aBlockFiles: tstringlist);
     procedure EndFoundFileBlock(const aBlockFiles: tstringlist);
-    procedure FoundBlock(const aBlockFile: TBlockFile);
+    procedure FoundBlock(const aBlockFile: TBlockFile; var next: boolean);
 
     procedure FoundMagicBlock(const aBlock: TBlockRecord;
       var findnext: boolean);
@@ -33,7 +32,6 @@ type
 
   public
     { Public declarations }
-    countt: boolean;
     constructor Create(Owner: TComponent); override;
   end;
 
@@ -52,15 +50,10 @@ begin
   ProgressBar1.Position := aPos;
 end;
 
-procedure TForm2.Button1Click(Sender: TObject);
-begin
-  countt := false
-end;
-
 constructor TForm2.Create(Owner: TComponent);
 begin
   inherited;
-  countt := true;
+
   aBlocks := TBlocks.Create;
   aBlocks.OnStartFileBlockFound := StartFoundFileBlock;
   aBlocks.OnFoundBlock := FoundBlock;
@@ -70,8 +63,6 @@ begin
 
   aBlocks.OnBlockProcessStep := BlockProcessStep;
   aBlocks.OnEndProcessBlockFile := EndProcessBlockFile;
-
-  // n := 0;
 end;
 
 procedure TForm2.EndFoundFileBlock(const aBlockFiles: tstringlist);
@@ -81,7 +72,7 @@ end;
 
 procedure TForm2.EndProcessBlockFile(const aBlockFile: TBlockFile);
 begin
-
+  Memo1.Lines.Add('End processing ' + aBlockFile.aFileName);
 end;
 
 procedure TForm2.FormActivate(Sender: TObject);
@@ -89,34 +80,34 @@ begin
   aBlocks.FindBlocks('C:\Users\ilde\AppData\Roaming\Bitcoin\blocks');
 end;
 
-procedure TForm2.FoundBlock(const aBlockFile: TBlockFile);
+procedure TForm2.FoundBlock(const aBlockFile: TBlockFile; var next: boolean);
 begin
   Memo1.Lines.Add(aBlockFile.aFileName);
   pbFiles.StepIt;
 
   aBlocks.ProcessBlock(aBlockFile);
   aBlockFile.Free;
+
+  next := true;
 end;
 
 procedure TForm2.FoundMagicBlock(const aBlock: TBlockRecord;
   var findnext: boolean);
 var
-  k, j: Integer;
-
+  k, j, i: Integer;
+  t: ansistring;
 begin
-  // Memo1.Lines.Add(datetimetostr(UnixToDateTime(aBlock.header.time)));
+                      findnext := false;
+                      exit;
+
   Memo1.Lines.BeginUpdate;
-  Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time))+  ' Bits: ' + aBlock.header.bits.ToString + ' nonce: ' +
-    aBlock.header.nonce.ToString);
+  Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: '
+    + aBlock.header.DifficultyTarget.ToString + ' nonce: ' + aBlock.header.nonce.ToString);
   Memo1.Lines.Add(' Prev. block: ' +
     T32ToString(aBlock.header.aPreviousBlockHash));
-  Memo1.Lines.Add(' MerkleRoot: ' +
-    T32ToString(aBlock.header.aMerkleRoot));
+  Memo1.Lines.Add(' MerkleRoot: ' + T32ToString(aBlock.header.aMerkleRoot));
 
   Memo1.Lines.Add(' Transactions ' + aBlock.transactions.Count.ToString);
-
-  if aBlock.transactions.Count > 4 then
-    countt := false;
 
   for k := 0 to aBlock.transactions.Count - 1 do
   begin
@@ -127,6 +118,14 @@ begin
       begin
         Memo1.Lines.Add('  input ' + T32ToString(aBlock.transactions[k].inputs
           [j].aTXID) + ' ' + aBlock.transactions[k].inputs[j].aVOUT.ToString);
+
+        t := '';
+        for i := 0 to aBlock.transactions[k].inputs[j].CoinBaseLength - 1 do
+        begin
+          t := t + IntToHex(aBlock.transactions[k].inputs[j].CoinBase[i]);
+        end;
+        Memo1.Lines.Add(' Coinbase: '+t);
+
       end;
 
     if aBlock.transactions[k].outputs.Count > 0 then
@@ -135,16 +134,19 @@ begin
         Memo1.Lines.Add('  output ' + aBlock.transactions[k].outputs[j]
           .nValue.ToString);
 
+           t := '';
+        for i := 0 to aBlock.transactions[k].outputs[j].OutputScriptLength - 1 do
+        begin
+          t := t + IntToHex(aBlock.transactions[k].outputs[j].OutputScript[i]);
+        end;
+        Memo1.Lines.Add(' Outputscript: '+t);
       end;
   end;
 
   Memo1.Lines.EndUpdate;
 
-  // Memo1.Lines.Add(inttostr(n));
-  // inc(n);
-
   Application.ProcessMessages;
-  findnext := false; // countt;
+  findnext := false;
 end;
 
 procedure TForm2.StartFoundFileBlock(const aBlockFiles: tstringlist);

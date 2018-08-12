@@ -1,5 +1,9 @@
 unit BlocksUnit;
 
+{
+  0100000000000000000000000000000000000000000000000000000000000000000000003BA3EDFD7A7B12B27AC72C3E67768F617FC81BC3888A51323A9FB8AA4B1E5E4A29AB5F49FFFF001D1DAC2B7C
+}
+
 interface
 
 uses
@@ -8,6 +12,7 @@ uses
 
 type
   T32 = array [0 .. 31] of byte;
+  th = array [0 .. 79] of byte;
 
   TCrypto = (tcBitcoin);
   TNet = (tnMainNet, tnTestNet);
@@ -18,26 +23,27 @@ type
   end;
 
   TBlockHeader = record
-    headerLenght: UInt32;
     versionNumber: UInt32;
     aPreviousBlockHash: T32; // reverse please
     aMerkleRoot: T32; // reverse please
     time: UInt32; // UnixTime
-    bits: UInt32;
+    DifficultyTarget: UInt32;
     nonce: UInt32;
   end;
 
   TInput = class(TObject)
     aTXID: T32;
     aVOUT: UInt32;
-    CoinBase : PByte;
+    CoinBaseLength: uint64;
+    CoinBase: PByte;
 
     destructor Destroy; override;
   end;
 
   TOutput = class(TObject)
     nValue: uint64;
-    OutputScript : PByte;
+    OutputScriptLength: uint64;
+    OutputScript: PByte;
 
     destructor Destroy; override;
   end;
@@ -81,6 +87,7 @@ type
     blocktype: TCrypto;
     network: TNet;
 
+    headerLenght: UInt32;
     header: TBlockHeader;
     transactions: TBlockTransactions;
 
@@ -93,7 +100,8 @@ type
 
   TStartFileBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
     of object;
-  TFoundFileBlockNotify = procedure(const aBlockFile: TBlockFile) of object;
+  TFoundFileBlockNotify = procedure(const aBlockFile: TBlockFile;
+    var next: boolean) of object;
   TEndFileBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
     of object;
 
@@ -144,7 +152,8 @@ implementation
 
 uses
   WinApi.Windows,
-  SysUtils, dialogs, dateutils;
+  SysUtils, dialogs, dateutils,
+  System.hash, SeSHA256, MainFormUnit;
 
 constructor TBlocks.Create;
 begin
@@ -157,6 +166,7 @@ var
   aBlockFile: TBlockFile;
   aBlockFiles: tstringlist;
   k: integer;
+  next: boolean;
 begin
   SetCurrentDir(aBlocksDirectory);
 
@@ -173,14 +183,17 @@ begin
 
     if assigned(OnStartFileBlockFound) then
       OnStartFileBlockFound(aBlockFiles);
-    k := 0;
-    // for k := 0 to aBlockFiles.Count - 1 do
+
+    for k := 0 to aBlockFiles.Count - 1 do
     begin
       aBlockFile := TBlockFile.Create;
       aBlockFile.aFileName := aBlockFiles[k];
 
       if assigned(fOnFoundBlock) then
-        fOnFoundBlock(aBlockFile);
+        fOnFoundBlock(aBlockFile, next);
+
+      if next = false then
+        break;
     end;
 
     if assigned(OnEndFileBlockFound) then
@@ -199,9 +212,19 @@ var
   aInput: TInput;
   aOutput: TOutput;
 
-  alocktime: UInt32;
+  tb: tbytes;
+  ss: string;
+var
+  myHashSHA: THashSHA2;
 
-  txCount, k, aScriptSigSize: uint64;
+  alocktime: UInt32;
+  m: string;
+  txCount, k, j: uint64;
+  b: byte;
+  headerstring: string;
+  test, test2: string;
+  hash: string;
+  msg, msg2: ShortString;
 
   function ReadVarValue: uint64;
   var
@@ -259,13 +282,34 @@ begin
 
           aBlock := TBlockRecord.Create;
 
-          aBlockFile.afs.Read(aBlock.header, 84);
+          aBlockFile.afs.Read(aBlock.headerLenght, 4);
 
+          aBlockFile.afs.Read(aBlock.header, 80);
+          aBlockFile.afs.Seek(-80, soCurrent);
+          setlength(tb, 80);
+          aBlockFile.afs.Read(tb, 80);
+
+          msg := '';
+          for k := 0 to 79 do
+          begin
+            msg := msg + ansichar(tb[k]);
+          end;
+
+          hash := SHA256ToStr(CalcSHA256(msg));
+          MainFormUnit.Form2.memo1.lines.Add(hash);
+          MainFormUnit.Form2.memo1.lines.Add('-----');
+
+          setlength(tb, 32);
+          for k := 0 to 63 do
+          begin
+            ss := '$' + IntToStr(int(hash[(k + 1) * 2]) +
+              IntToStr(byte(hash[(k + 2) * 2]));
+            // b := byte(StrToInt('$'+hash[(k*2)]+hash[(k*2)+1]));
+
+          end;
 
           // tx count
           txCount := ReadVarValue;
-          if txCount > 1 then
-            txCount := txCount;
 
           while (txCount > 0) do
           begin
@@ -285,10 +329,10 @@ begin
                 aBlockFile.afs.Read(aInput.aTXID, 32);
                 aBlockFile.afs.Read(aInput.aVOUT, 4);
 
-                aScriptSigSize := ReadVarValue;
+                aInput.CoinBaseLength := ReadVarValue;
 
-                GetMem(aInput.CoinBase, aScriptSigSize);
-                aBlockFile.afs.Read(aInput.CoinBase^, aScriptSigSize);
+                GetMem(aInput.CoinBase, aInput.CoinBaseLength);
+                aBlockFile.afs.Read(aInput.CoinBase^, aInput.CoinBaseLength);
 
                 // No need store the seq
                 aBlockFile.afs.Read(aseq, 4);
@@ -302,12 +346,15 @@ begin
               begin
                 aOutput := aTransaction.outputs.NewOutput;
 
-                aBlockFile.afs.Read(aOutput.nValue, 8);
+                aBlockFile.afs.Read(aOutput.nValue, 8); // in satoshis
 
-                aScriptSigSize := ReadVarValue;
-                GetMem(aOutput.OutputScript, aScriptSigSize);
-                aBlockFile.afs.Read(aOutput.OutputScript^, aScriptSigSize);
+                aOutput.OutputScriptLength := ReadVarValue;
+
+                GetMem(aOutput.OutputScript, aOutput.OutputScriptLength);
+                aBlockFile.afs.Read(aOutput.OutputScript^,
+                  aOutput.OutputScriptLength);
               end;
+
             aBlockFile.afs.Read(alocktime, 4);
             dec(txCount);
           end;
@@ -419,7 +466,7 @@ begin
   result := '';
   for k := 0 to 31 do
   begin
-    result := IntToHex(byte(at32[k])) + result;
+    result := inttohex(byte(at32[k])) + result;
   end;
 end;
 

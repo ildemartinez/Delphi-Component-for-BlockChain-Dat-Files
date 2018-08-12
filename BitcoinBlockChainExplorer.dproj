@@ -96,6 +96,7 @@
             <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="BlocksUnit.pas"/>
+        <DCCReference Include="C:\Users\ilde\Desktop\secrypt-master\SeCrypt\SeSHA256.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>
