@@ -1,18 +1,20 @@
 unit BlocksUnit;
 
-{
-  0100000000000000000000000000000000000000000000000000000000000000000000003BA3EDFD7A7B12B27AC72C3E67768F617FC81BC3888A51323A9FB8AA4B1E5E4A29AB5F49FFFF001D1DAC2B7C
-}
-
 interface
 
 uses
   System.Classes,
   System.Contnrs;
 
+const
+  HEADERSIZE = 80;
+
 type
+  // To store a 32 bytes
   T32 = array [0 .. 31] of byte;
-  th = array [0 .. 79] of byte;
+
+  // To store the block header
+  THeader = array [0 .. 79] of byte;
 
   TCrypto = (tcBitcoin);
   TNet = (tnMainNet, tnTestNet);
@@ -103,7 +105,7 @@ type
     of object;
   TFoundFileBlockNotify = procedure(const aBlockFile: TBlockFile;
     var next: boolean) of object;
-  TEndFileBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
+  TEndFilesBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
     of object;
 
   TFoundBlockNotify = procedure(const aBlock: TBlockRecord;
@@ -116,7 +118,7 @@ type
     // File block events
     fOnStartFileBlockFoundNotify: TStartFileBlockFoundNotify;
     fOnFoundBlock: TFoundFileBlockNotify;
-    fOnEndFileBlockFoundNotify: TEndFileBlockFoundNotify;
+    fOnEndFilesBlockFoundNotify: TEndFilesBlockFoundNotify;
 
     fOnMagicBlockFound: TFoundBlockNotify;
     fBlockProcessStep: TBlockProcessStepNotify;
@@ -135,8 +137,8 @@ type
       read fOnStartFileBlockFoundNotify write fOnStartFileBlockFoundNotify;
     property OnFoundBlock: TFoundFileBlockNotify read fOnFoundBlock
       write fOnFoundBlock;
-    property OnEndFileBlockFound: TEndFileBlockFoundNotify
-      read fOnEndFileBlockFoundNotify write fOnEndFileBlockFoundNotify;
+    property OnEndFilesBlockFound: TEndFilesBlockFoundNotify
+      read fOnEndFilesBlockFoundNotify write fOnEndFilesBlockFoundNotify;
 
     property OnMagicBlockFound: TFoundBlockNotify read fOnMagicBlockFound
       write fOnMagicBlockFound;
@@ -197,8 +199,8 @@ begin
         break;
     end;
 
-    if assigned(OnEndFileBlockFound) then
-      OnEndFileBlockFound(aBlockFiles);
+    if assigned(OnEndFilesBlockFound) then
+      OnEndFilesBlockFound(aBlockFiles);
   end;
 end;
 
@@ -213,7 +215,7 @@ var
   aInput: TInput;
   aOutput: TOutput;
 
-  tb: tbytes;
+  tb: THeader;
 
 var
   alocktime: UInt32;
@@ -279,21 +281,20 @@ begin
           aBlockFile.afs.Read(aBlock.headerLenght, 4);
 
           // Read the header fields
-          aBlockFile.afs.Read(aBlock.header, 80);
+          aBlockFile.afs.Read(aBlock.header, HEADERSIZE);
 
           // Re-read the header to calculate hash
-          aBlockFile.afs.Seek(-80, soCurrent);
-          setlength(tb, 80);
-          aBlockFile.afs.Read(tb, 80);
+          aBlockFile.afs.Seek(-HEADERSIZE, soCurrent);
+          aBlockFile.afs.Read(tb, HEADERSIZE);
 
           // Convert TBytes to string
-          msg := '';
-          for k := 0 to length(tb) - 1 do
+          msg := EmptyAnsiStr;
+          for k := 0 to HEADERSIZE - 1 do
             msg := msg + ansichar(tb[k]);
 
           // double header hash
-          aBlock.hash :=
-            SHA256ToStr(CalcSHA256(SHA256ToBinaryStr(CalcSHA256(msg))));
+          aBlock.hash := reversehash(
+            SHA256ToStr(CalcSHA256(SHA256ToBinaryStr(CalcSHA256(msg)))));
 
           // tx count
           txCount := ReadVarValue;
@@ -308,7 +309,6 @@ begin
             aBlock.ninputs := ReadVarValue;
 
             if aBlock.ninputs > 0 then
-
               for k := 0 to aBlock.ninputs - 1 do
               begin
                 aInput := aTransaction.inputs.NewInput;
@@ -354,7 +354,6 @@ begin
           aBlock.Free;
 
           state := 0;
-
         end;
 
     end;
@@ -450,7 +449,8 @@ function T32ToString(const at32: T32): string;
 var
   k: integer;
 begin
-  result := '';
+  result := EmptyStr;
+
   for k := 0 to 31 do
   begin
     result := inttohex(byte(at32[k])) + result;

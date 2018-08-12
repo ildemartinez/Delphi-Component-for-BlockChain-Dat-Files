@@ -15,6 +15,10 @@ type
     ProgressBar1: TProgressBar;
     pbFiles: TProgressBar;
     Button1: TButton;
+    Label1: TLabel;
+    Label2: TLabel;
+    lblpblocks: TLabel;
+    lblpblock: TLabel;
     procedure FormActivate(Sender: TObject);
     procedure Button1Click(Sender: TObject);
   private
@@ -52,8 +56,14 @@ uses
 
 procedure TForm2.BlockProcessStep(const aPos, aSize: int64);
 begin
-  ProgressBar1.Max := aSize;
-  ProgressBar1.Position := aPos;
+
+  if aPos mod 5000 = 0 then
+  begin
+    ProgressBar1.Max := aSize;
+    ProgressBar1.Position := aPos;
+
+    lblpblock.Caption := aPos.ToString + ' / ' + aSize.ToString;
+  end;
 end;
 
 procedure TForm2.Button1Click(Sender: TObject);
@@ -70,7 +80,7 @@ begin
   aBlocks := TBlocks.Create;
   aBlocks.OnStartFileBlockFound := StartFoundFileBlock;
   aBlocks.OnFoundBlock := FoundBlock;
-  aBlocks.OnEndFileBlockFound := EndFoundFileBlock;
+  aBlocks.OnEndFilesBlockFound := EndFoundFileBlock;
 
   aBlocks.OnMagicBlockFound := FoundMagicBlock;
 
@@ -91,7 +101,10 @@ end;
 
 procedure TForm2.EndProcessBlockFile(const aBlockFile: TBlockFile);
 begin
+
   Memo1.Lines.Add('End processing ' + aBlockFile.aFileName);
+  ProgressBar1.Position := ProgressBar1.Max;
+
 end;
 
 procedure TForm2.FormActivate(Sender: TObject);
@@ -107,6 +120,7 @@ begin
   aBlocks.ProcessBlock(aBlockFile);
   aBlockFile.Free;
 
+  next := true; //false;
   next := false;
 end;
 
@@ -119,7 +133,7 @@ begin
   // Performance
   inc(nblocks);
 
-  {
+    {
 
     Memo1.Lines.BeginUpdate;
     Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: '
@@ -168,10 +182,12 @@ begin
     end;
 
     Memo1.Lines.EndUpdate;
-  }
 
+  }
   Application.ProcessMessages;
   findnext := co;
+
+ // findnext := false;
 end;
 
 procedure TForm2.StartFoundFileBlock(const aBlockFiles: tstringlist);
@@ -183,6 +199,9 @@ begin
   pbFiles.Min := 0;
   pbFiles.Max := aBlockFiles.Count;
   pbFiles.Step := 1;
+
+  lblpblocks.Caption := '/' + aBlockFiles.Count.ToString;
+
 end;
 
 end.

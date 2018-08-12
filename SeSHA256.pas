@@ -1,5 +1,5 @@
 unit SeSHA256;
-
+
 {$IFDEF FPC}
 {$MODE delphi}
 {$ENDIF}
@@ -19,7 +19,9 @@ function CalcSHA256(Stream: TStream): TSHA256HASH; overload;
 // Convierte el hash en una cadena de texto
 function SHA256ToStr(Hash: TSHA256HASH): String;
 
-function SHA256ToBinaryStr(Hash: TSHA256HASH): ansistring;
+function SHA256ToBinaryStr(Hash: TSHA256HASH): AnsiString;
+
+function reversehash(Hash: string): string;
 
 implementation
 
@@ -171,25 +173,31 @@ begin
 end;
 
 function SHA256ToStr(Hash: TSHA256HASH): String;
-var
-  i: Integer;
 begin
-  Result := EmptyStr;
-  for i := 0 to 6 do
+  // Refactored
+  Result := IntToHex(Hash[0], 8) + IntToHex(Hash[1], 8) + IntToHex(Hash[2], 8) +
+    IntToHex(Hash[3], 8) + IntToHex(Hash[4], 8) + IntToHex(Hash[5], 8) +
+    IntToHex(Hash[6], 8) + IntToHex(Hash[7], 8);
+  {
+    for i := 0 to 6 do
     Result := Result + IntToHex(Hash[i], 8);
-  Result := Result + IntToHex(Hash[7], 8);
+    Result := Result + IntToHex(Hash[7], 8); }
 end;
 
-function SHA256ToBinaryStr(Hash: TSHA256HASH): ansistring;
+function SHA256ToBinaryStr(Hash: TSHA256HASH): AnsiString;
 var
   i: Integer;
   temp: string;
 begin
-  temp := EmptyStr;
-  for i := 0 to 7 do
-    temp := temp + IntToHex(Hash[i], 8);
+  // Refactored
+  temp := IntToHex(Hash[0], 8) + IntToHex(Hash[1], 8) + IntToHex(Hash[2], 8) +
+    IntToHex(Hash[3], 8) + IntToHex(Hash[4], 8) + IntToHex(Hash[5], 8) +
+    IntToHex(Hash[6], 8) + IntToHex(Hash[7], 8);
+  { temp := EmptyStr;
+    for i := 0 to 7 do
+    temp := temp + IntToHex(Hash[i], 8); }
 
-  Result := '';
+  Result := EmptyAnsiStr;
   for i := 0 to 31 do
   begin
     Result := Result + ansichar
@@ -198,4 +206,18 @@ begin
 
 end;
 
+function reversehash(Hash: string): string;
+var
+  k: byte;
+begin
+  Result := EmptyStr;
+  k := 64;
+  while (k > 0) do
+  begin
+    Result := Result + Hash[k - 1] + Hash[k];
+    k := k - 2;
+  end;
+end;
+
 end.
+
