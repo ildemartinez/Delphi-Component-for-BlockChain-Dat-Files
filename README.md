@@ -3,4 +3,4 @@ This is a Delphi component for reading the dat files from Blockchain. The idea i
 
 Here is released the component and the application to test it..... on dev process of course!
 
-
+Hashing sha256 functions from https://github.com/dxeoane/secrypt
