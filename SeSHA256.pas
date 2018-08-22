@@ -16,14 +16,20 @@ type
 function CalcSHA256(Msg: AnsiString): TSHA256HASH; overload;
 // Calcula el hash SHA256 de un stream
 function CalcSHA256(Stream: TStream): TSHA256HASH; overload;
+
 // Convierte el hash en una cadena de texto
 function SHA256ToStr(Hash: TSHA256HASH): String;
 
 function SHA256ToBinaryStr(Hash: TSHA256HASH): AnsiString;
 
-function reversehash(Hash: string): string;
+function ReverseHash(Hash: string): string;
+
+function GetMemoryStream: TMemoryStream;
 
 implementation
+
+var
+  aMemoryStream: TMemoryStream;
 
 type
   // Un bloque de datos de 64 bytes de longitud
@@ -92,6 +98,7 @@ begin
   Stream := TMemoryStream.Create;
   try
     // Guardamos el texto en un stream
+    Stream.Position := 0;
     Stream.WriteBuffer(PAnsiChar(Msg)^, Length(Msg));
     Stream.Position := 0;
     // Calculamos el hash del stream
@@ -178,10 +185,6 @@ begin
   Result := IntToHex(Hash[0], 8) + IntToHex(Hash[1], 8) + IntToHex(Hash[2], 8) +
     IntToHex(Hash[3], 8) + IntToHex(Hash[4], 8) + IntToHex(Hash[5], 8) +
     IntToHex(Hash[6], 8) + IntToHex(Hash[7], 8);
-  {
-    for i := 0 to 6 do
-    Result := Result + IntToHex(Hash[i], 8);
-    Result := Result + IntToHex(Hash[7], 8); }
 end;
 
 function SHA256ToBinaryStr(Hash: TSHA256HASH): AnsiString;
@@ -203,10 +206,9 @@ begin
     Result := Result + ansichar
       (StrToInt('$' + temp[(i * 2) + 1] + temp[(i * 2) + 2]));
   end;
-
 end;
 
-function reversehash(Hash: string): string;
+function ReverseHash(Hash: string): string;
 var
   k: byte;
 begin
@@ -218,6 +220,23 @@ begin
     k := k - 2;
   end;
 end;
+
+function GetMemoryStream: TMemoryStream;
+begin
+  if aMemoryStream = nil then
+    aMemoryStream := TMemoryStream.Create;
+
+  Result := aMemoryStream;
+end;
+
+initialization
+
+aMemoryStream := nil;
+
+finalization
+
+if aMemoryStream <> nil then
+  aMemoryStream.Free;
 
 end.
 

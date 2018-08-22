@@ -24,7 +24,7 @@ type
   private
     { Private declarations }
     aBlocks: TBlocks;
-    co: boolean;
+    ContinueProcess: boolean;
     nblocks: uint64;
 
     Stopwatch: TStopwatch;
@@ -56,8 +56,7 @@ uses
 
 procedure TForm2.BlockProcessStep(const aPos, aSize: int64);
 begin
-
-  if aPos mod 5000 = 0 then
+  if aPos mod 8000 = 0 then
   begin
     ProgressBar1.Max := aSize;
     ProgressBar1.Position := aPos;
@@ -68,14 +67,14 @@ end;
 
 procedure TForm2.Button1Click(Sender: TObject);
 begin
-  co := false;
+  ContinueProcess := false;
 end;
 
 constructor TForm2.Create(Owner: TComponent);
 begin
   inherited;
 
-  co := true;
+  ContinueProcess := true;
 
   aBlocks := TBlocks.Create;
   aBlocks.OnStartFileBlockFound := StartFoundFileBlock;
@@ -120,7 +119,7 @@ begin
   aBlocks.ProcessBlock(aBlockFile);
   aBlockFile.Free;
 
-  next := true; //false;
+  next := true;
   next := false;
 end;
 
@@ -133,7 +132,7 @@ begin
   // Performance
   inc(nblocks);
 
-    {
+   {
 
     Memo1.Lines.BeginUpdate;
     Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: '
@@ -183,11 +182,11 @@ begin
 
     Memo1.Lines.EndUpdate;
 
-  }
+    }
   Application.ProcessMessages;
-  findnext := co;
+  findnext := ContinueProcess;
 
- // findnext := false;
+  //findnext := false;
 end;
 
 procedure TForm2.StartFoundFileBlock(const aBlockFiles: tstringlist);

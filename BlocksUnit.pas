@@ -4,7 +4,8 @@ interface
 
 uses
   System.Classes,
-  System.Contnrs;
+  System.Contnrs,
+  SeSHA256;
 
 const
   HEADERSIZE = 80;
@@ -151,12 +152,14 @@ type
 
 function T32ToString(const at32: T32): string;
 
+function CalcHeaderSHA256(aHeader: THeader): TSHA256HASH; overload;
+
 implementation
 
 uses
   WinApi.Windows,
   SysUtils, dialogs, dateutils,
-  SeSHA256, MainFormUnit, System.hash;
+  MainFormUnit, System.hash;
 
 constructor TBlocks.Create;
 begin
@@ -220,7 +223,6 @@ var
 var
   alocktime: UInt32;
   txCount, k: uint64;
-  msg: ansistring;
 
   function ReadVarValue: uint64;
   var
@@ -287,14 +289,10 @@ begin
           aBlockFile.afs.Seek(-HEADERSIZE, soCurrent);
           aBlockFile.afs.Read(tb, HEADERSIZE);
 
-          // Convert TBytes to string
-          msg := EmptyAnsiStr;
-          for k := 0 to HEADERSIZE - 1 do
-            msg := msg + ansichar(tb[k]);
-
           // double header hash
-          aBlock.hash := reversehash(
-            SHA256ToStr(CalcSHA256(SHA256ToBinaryStr(CalcSHA256(msg)))));
+          aBlock.hash :=
+            reversehash
+            (SHA256ToStr(CalcSHA256(SHA256ToBinaryStr(CalcHeaderSHA256(tb)))));
 
           // tx count
           txCount := ReadVarValue;
@@ -473,6 +471,23 @@ begin
   FreeMem(OutputScript);
 
   inherited;
+end;
+
+function CalcHeaderSHA256(aHeader: THeader): TSHA256HASH; overload;
+var
+  Stream: TMemoryStream;
+begin
+  Stream := GetMemoryStream; // TMemoryStream.Create;
+  // try
+  // Guardamos el texto en un stream
+  Stream.Position := 0;
+  Stream.WriteBuffer(aHeader, HEADERSIZE);
+  Stream.Position := 0;
+  // Calculamos el hash del stream
+  result := CalcSHA256(Stream);
+  // finally
+  // Stream.Free;
+  // end;
 end;
 
 end.
