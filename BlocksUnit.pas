@@ -5,18 +5,10 @@ interface
 uses
   System.Classes,
   System.Contnrs,
+
   SeSHA256;
 
-const
-  HEADERSIZE = 80;
-
 type
-  // To store a 32 bytes
-  T32 = array [0 .. 31] of byte;
-
-  // To store the block header
-  THeader = array [0 .. 79] of byte;
-
   TCrypto = (tcBitcoin);
   TNet = (tnMainNet, tnTestNet);
 
@@ -105,7 +97,8 @@ type
   TStartFileBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
     of object;
   TFoundFileBlockNotify = procedure(const aBlockFile: TBlockFile;
-    var next: boolean) of object;
+    const actualFileBlockNumber, totalBlockFiles: integer; var next: boolean)
+    of object;
   TEndFilesBlockFoundNotify = procedure(const aBlockFiles: tstringlist)
     of object;
 
@@ -117,13 +110,16 @@ type
   TBlocks = class(TObject)
   private
     // File block events
-    fOnStartFileBlockFoundNotify: TStartFileBlockFoundNotify;
-    fOnFoundBlock: TFoundFileBlockNotify;
-    fOnEndFilesBlockFoundNotify: TEndFilesBlockFoundNotify;
+    fOnStartProcessFiles: TStartFileBlockFoundNotify;
+    fOnAfterFileBlockProcessed: TFoundFileBlockNotify;
+    fOnEndProcessFiles: TEndFilesBlockFoundNotify;
 
     fOnMagicBlockFound: TFoundBlockNotify;
     fBlockProcessStep: TBlockProcessStepNotify;
     fEndProcessBlockFile: TEndProcessBlockFile;
+    fOnEndProc: TNotifyEvent;
+    fOnStartProc: TNotifyEvent;
+    fOnBeforeFileBlockProcess: TFoundFileBlockNotify;
 
     procedure InternalProcessBlock(const aBlockFile: TBlockFile);
   public
@@ -131,16 +127,29 @@ type
 
     constructor Create;
 
-    procedure FindBlocks(const aBlocksDirectory: string);
+    procedure ParseBlockFiles(const aBlocksDirectory: string);
     procedure ProcessBlock(const aBlockFile: TBlockFile);
 
-    property OnStartFileBlockFound: TStartFileBlockFoundNotify
-      read fOnStartFileBlockFoundNotify write fOnStartFileBlockFoundNotify;
-    property OnFoundBlock: TFoundFileBlockNotify read fOnFoundBlock
-      write fOnFoundBlock;
-    property OnEndFilesBlockFound: TEndFilesBlockFoundNotify
-      read fOnEndFilesBlockFoundNotify write fOnEndFilesBlockFoundNotify;
+    property OnStartProc: TNotifyEvent read fOnStartProc write fOnStartProc;
+    property OnEndProc: TNotifyEvent read fOnEndProc write fOnEndProc;
 
+    // Start process all files
+    property OnStartProcessFiles: TStartFileBlockFoundNotify
+      read fOnStartProcessFiles write fOnStartProcessFiles;
+
+    // before process a file
+    property OnBeforeFileBlockProcess: TFoundFileBlockNotify
+      read fOnBeforeFileBlockProcess write fOnBeforeFileBlockProcess;
+
+    // after a processed file
+    property OnAfterFileBlockProcessed: TFoundFileBlockNotify
+      read fOnAfterFileBlockProcessed write fOnAfterFileBlockProcessed;
+
+    // Process files end
+    property OnEndProcessFiles: TEndFilesBlockFoundNotify
+      read fOnEndProcessFiles write fOnEndProcessFiles;
+
+    // Block found
     property OnMagicBlockFound: TFoundBlockNotify read fOnMagicBlockFound
       write fOnMagicBlockFound;
 
@@ -149,10 +158,6 @@ type
     property OnEndProcessBlockFile: TEndProcessBlockFile
       read fEndProcessBlockFile write fEndProcessBlockFile;
   end;
-
-function T32ToString(const at32: T32): string;
-
-function CalcHeaderSHA256(aHeader: THeader): TSHA256HASH; overload;
 
 implementation
 
@@ -166,7 +171,7 @@ begin
 
 end;
 
-procedure TBlocks.FindBlocks(const aBlocksDirectory: string);
+procedure TBlocks.ParseBlockFiles(const aBlocksDirectory: string);
 var
   searchResult: TSearchRec;
   aBlockFile: TBlockFile;
@@ -174,6 +179,10 @@ var
   k: integer;
   next: boolean;
 begin
+
+  if Assigned(OnStartProc) then
+    OnStartProc(self);
+
   SetCurrentDir(aBlocksDirectory);
 
   if findfirst('blk?????.dat', faAnyFile, searchResult) = 0 then
@@ -187,24 +196,35 @@ begin
     // Must free up resources used by these successful finds
     FindClose(searchResult);
 
-    if assigned(OnStartFileBlockFound) then
-      OnStartFileBlockFound(aBlockFiles);
+    if Assigned(OnStartProcessFiles) then
+      OnStartProcessFiles(aBlockFiles);
 
     for k := 0 to aBlockFiles.Count - 1 do
     begin
       aBlockFile := TBlockFile.Create;
       aBlockFile.aFileName := aBlockFiles[k];
 
-      if assigned(fOnFoundBlock) then
-        fOnFoundBlock(aBlockFile, next);
+      if Assigned(fOnBeforeFileBlockProcess) then
+        fOnBeforeFileBlockProcess(aBlockFile, k + 1, aBlockFiles.Count, next);
+
+      ProcessBlock(aBlockFile);
+
+      // Block found
+      if Assigned(OnAfterFileBlockProcessed) then
+        OnAfterFileBlockProcessed(aBlockFile, k + 1, aBlockFiles.Count, next);
+
+      aBlockFile.Free;
 
       if next = false then
         break;
     end;
 
-    if assigned(OnEndFilesBlockFound) then
-      OnEndFilesBlockFound(aBlockFiles);
+    if Assigned(OnEndProcessFiles) then
+      OnEndProcessFiles(aBlockFiles);
   end;
+
+  if Assigned(OnEndProc) then
+    OnEndProc(self);
 end;
 
 procedure TBlocks.InternalProcessBlock(const aBlockFile: TBlockFile);
@@ -228,25 +248,26 @@ var
   var
     atxCount: UInt8;
     atxCount2: UInt16;
-    atxCount4: longword;
+    atxCount4: UInt32;
   begin
     aBlockFile.afs.Read(atxCount, 1);
     if atxCount < $FD then
       result := atxCount
-    else if atxCount = $FD then
-    begin
-      aBlockFile.afs.Read(atxCount2, 2);
-      result := atxCount2;
-    end
-    else if atxCount = $FE then
-    begin
-      aBlockFile.afs.Read(atxCount4, 4);
-      result := atxCount4;
-    end
-    else if atxCount = $FF then
-    begin
-      aBlockFile.afs.Read(result, 8);
-    end;
+    else
+      case atxCount of
+        $FD:
+          begin
+            aBlockFile.afs.Read(atxCount2, 2);
+            result := atxCount2;
+          end;
+        $FE:
+          begin
+            aBlockFile.afs.Read(atxCount4, 4);
+            result := atxCount4;
+          end;
+        $FF:
+          aBlockFile.afs.Read(result, 8);
+      end;
 
   end;
 
@@ -275,7 +296,7 @@ begin
         if car = $D9 then
         begin
 
-          if assigned(OnBlockProcessStep) then
+          if Assigned(OnBlockProcessStep) then
             OnBlockProcessStep(aBlockFile.afs.Position, aBlockFile.afs.Size);
 
           aBlock := TBlockRecord.Create;
@@ -345,7 +366,7 @@ begin
           end;
 
           // Fire the block found event
-          if assigned(OnMagicBlockFound) then
+          if Assigned(OnMagicBlockFound) then
             OnMagicBlockFound(aBlock, cont);
 
           // Free the block so user must copy or use it and forget
@@ -359,7 +380,7 @@ begin
   end;
 
   if (cont = true) then
-    if assigned(OnEndProcessBlockFile) then
+    if Assigned(OnEndProcessBlockFile) then
       OnEndProcessBlockFile(aBlockFile);
 end;
 
@@ -443,20 +464,6 @@ begin
   self.Add(result);
 end;
 
-function T32ToString(const at32: T32): string;
-var
-  k: integer;
-begin
-  result := EmptyStr;
-
-  for k := 0 to 31 do
-  begin
-    result := inttohex(byte(at32[k])) + result;
-  end;
-end;
-
-{ TInput }
-
 destructor TInput.Destroy;
 begin
   FreeMem(CoinBase);
@@ -464,30 +471,11 @@ begin
   inherited;
 end;
 
-{ TOutput }
-
 destructor TOutput.Destroy;
 begin
   FreeMem(OutputScript);
 
   inherited;
-end;
-
-function CalcHeaderSHA256(aHeader: THeader): TSHA256HASH; overload;
-var
-  Stream: TMemoryStream;
-begin
-  Stream := GetMemoryStream; // TMemoryStream.Create;
-  // try
-  // Guardamos el texto en un stream
-  Stream.Position := 0;
-  Stream.WriteBuffer(aHeader, HEADERSIZE);
-  Stream.Position := 0;
-  // Calculamos el hash del stream
-  result := CalcSHA256(Stream);
-  // finally
-  // Stream.Free;
-  // end;
 end;
 
 end.

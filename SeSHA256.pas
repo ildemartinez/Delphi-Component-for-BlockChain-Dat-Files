@@ -8,9 +8,18 @@ interface
 
 uses Sysutils, Classes;
 
+const
+  HEADERSIZE = 80;
+
 type
   TSHA256HASH = array [0 .. 7] of Cardinal;
   PSHA256HASH = ^TSHA256HASH;
+
+  // To store a 32 bytes
+  T32 = array [0 .. 31] of byte;
+
+  // To store the block header
+  THeader = array [0 .. HEADERSIZE - 1] of byte;
 
   // Calcula el hash SHA256 de una cadena de texto
 function CalcSHA256(Msg: AnsiString): TSHA256HASH; overload;
@@ -25,6 +34,9 @@ function SHA256ToBinaryStr(Hash: TSHA256HASH): AnsiString;
 function ReverseHash(Hash: string): string;
 
 function GetMemoryStream: TMemoryStream;
+
+function T32ToString(const at32: T32): string;
+function CalcHeaderSHA256(aHeader: THeader): TSHA256HASH; overload;
 
 implementation
 
@@ -227,6 +239,31 @@ begin
     aMemoryStream := TMemoryStream.Create;
 
   Result := aMemoryStream;
+end;
+
+function CalcHeaderSHA256(aHeader: THeader): TSHA256HASH; overload;
+var
+  Stream: TMemoryStream;
+begin
+  Stream := GetMemoryStream; // TMemoryStream.Create;
+  // Guardamos el texto en un stream
+  Stream.Position := 0;
+  Stream.WriteBuffer(aHeader, HEADERSIZE);
+  Stream.Position := 0;
+  // Calculamos el hash del stream
+  Result := CalcSHA256(Stream);
+end;
+
+function T32ToString(const at32: T32): string;
+var
+  k: Integer;
+begin
+  Result := EmptyStr;
+
+  for k := 0 to 31 do
+  begin
+    Result := IntToHex(byte(at32[k])) + Result;
+  end;
 end;
 
 initialization

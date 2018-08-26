@@ -4,10 +4,12 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
-  System.Classes, Vcl.Graphics,
-  Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
+  System.Classes, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
+  Vcl.StdCtrls, Vcl.ComCtrls,
 
-  BlocksUnit, Vcl.StdCtrls, Vcl.ComCtrls, System.Diagnostics, System.TimeSpan;
+  System.Diagnostics, System.TimeSpan,
+
+  BlocksUnit;
 
 type
   TForm2 = class(TForm)
@@ -31,9 +33,17 @@ type
     TimeSpan: TTimeSpan;
 
   protected
-    procedure StartFoundFileBlock(const aBlockFiles: tstringlist);
+    procedure StartProc(Sender: TObject);
+    procedure EndProc(Sender: TObject);
+
+    procedure StartProcessFiles(const aBlockFiles: tstringlist);
     procedure EndFoundFileBlock(const aBlockFiles: tstringlist);
-    procedure FoundBlock(const aBlockFile: TBlockFile; var next: boolean);
+
+    procedure BeforeProcessAFile(const aBlockFile: TBlockFile;
+      const actualFileBlock, TotalFiles: integer; var next: boolean);
+
+    procedure AfterProcessAFile(const aBlockFile: TBlockFile;
+      const actualFileBlock, TotalFiles: integer; var next: boolean);
 
     procedure FoundMagicBlock(const aBlock: TBlockRecord;
       var findnext: boolean);
@@ -52,11 +62,18 @@ implementation
 
 uses
   dateutils;
+
 {$R *.dfm}
+
+procedure TForm2.BeforeProcessAFile(const aBlockFile: TBlockFile;
+  const actualFileBlock, TotalFiles: integer; var next: boolean);
+begin
+
+end;
 
 procedure TForm2.BlockProcessStep(const aPos, aSize: int64);
 begin
-  if aPos mod 8000 = 0 then
+  if aPos mod 5000 = 0 then
   begin
     ProgressBar1.Max := aSize;
     ProgressBar1.Position := aPos;
@@ -77,14 +94,21 @@ begin
   ContinueProcess := true;
 
   aBlocks := TBlocks.Create;
-  aBlocks.OnStartFileBlockFound := StartFoundFileBlock;
-  aBlocks.OnFoundBlock := FoundBlock;
-  aBlocks.OnEndFilesBlockFound := EndFoundFileBlock;
+  aBlocks.OnStartProc := StartProc;
+  aBlocks.OnEndProc := EndProc;
+
+  aBlocks.OnStartProcessFiles := StartProcessFiles;
+  aBlocks.OnEndProcessBlockFile := EndProcessBlockFile;
+
+  aBlocks.OnBeforeFileBlockProcess := BeforeProcessAFile;
+  aBlocks.OnAfterFileBlockProcessed := AfterProcessAFile;
+
+  aBlocks.OnEndProcessFiles := EndFoundFileBlock;
 
   aBlocks.OnMagicBlockFound := FoundMagicBlock;
 
   aBlocks.OnBlockProcessStep := BlockProcessStep;
-  aBlocks.OnEndProcessBlockFile := EndProcessBlockFile;
+
 end;
 
 procedure TForm2.EndFoundFileBlock(const aBlockFiles: tstringlist);
@@ -98,26 +122,29 @@ begin
   aBlockFiles.Free;
 end;
 
+procedure TForm2.EndProc(Sender: TObject);
+begin
+  Memo1.Lines.Add('End parsing');
+end;
+
 procedure TForm2.EndProcessBlockFile(const aBlockFile: TBlockFile);
 begin
-
   Memo1.Lines.Add('End processing ' + aBlockFile.aFileName);
   ProgressBar1.Position := ProgressBar1.Max;
-
 end;
 
 procedure TForm2.FormActivate(Sender: TObject);
 begin
-  aBlocks.FindBlocks('C:\Users\ilde\AppData\Roaming\Bitcoin\blocks');
+  aBlocks.ParseBlockFiles('C:\Users\ilde\AppData\Roaming\Bitcoin\blocks');
 end;
 
-procedure TForm2.FoundBlock(const aBlockFile: TBlockFile; var next: boolean);
+procedure TForm2.AfterProcessAFile(const aBlockFile: TBlockFile;
+  const actualFileBlock, TotalFiles: integer; var next: boolean);
 begin
-  Memo1.Lines.Add(aBlockFile.aFileName);
+  Memo1.Lines.Add('Processed ' + aBlockFile.aFileName);
   pbFiles.StepIt;
 
-  aBlocks.ProcessBlock(aBlockFile);
-  aBlockFile.Free;
+  lblpblocks.Caption := format('%d / %d', [actualFileBlock, TotalFiles]);
 
   next := true;
   next := false;
@@ -126,13 +153,13 @@ end;
 procedure TForm2.FoundMagicBlock(const aBlock: TBlockRecord;
   var findnext: boolean);
 var
-  k, j, i: Integer;
+  k, j, i: integer;
   t: string;
 begin
   // Performance
   inc(nblocks);
 
-   {
+  {
 
     Memo1.Lines.BeginUpdate;
     Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: '
@@ -182,15 +209,23 @@ begin
 
     Memo1.Lines.EndUpdate;
 
-    }
+  }
   Application.ProcessMessages;
   findnext := ContinueProcess;
 
-  //findnext := false;
+  // findnext := false;
 end;
 
-procedure TForm2.StartFoundFileBlock(const aBlockFiles: tstringlist);
+procedure TForm2.StartProc(Sender: TObject);
 begin
+  Memo1.Lines.Add('Start parsing');
+  lblpblock.Caption := '';
+  lblpblocks.Caption := '';
+end;
+
+procedure TForm2.StartProcessFiles(const aBlockFiles: tstringlist);
+begin
+  Memo1.Lines.Add('Block files found to process ' + aBlockFiles.Count.ToString);
   nblocks := 0;
 
   Stopwatch := TStopwatch.StartNew;
@@ -198,9 +233,6 @@ begin
   pbFiles.Min := 0;
   pbFiles.Max := aBlockFiles.Count;
   pbFiles.Step := 1;
-
-  lblpblocks.Caption := '/' + aBlockFiles.Count.ToString;
-
 end;
 
 end.

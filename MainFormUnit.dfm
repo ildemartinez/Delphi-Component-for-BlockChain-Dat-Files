@@ -54,7 +54,7 @@ object Form2: TForm2
     Top = 296
     Width = 352
     Height = 17
-    Position = 45
+    Max = 0
     TabOrder = 1
   end
   object pbFiles: TProgressBar
@@ -62,7 +62,7 @@ object Form2: TForm2
     Top = 273
     Width = 352
     Height = 17
-    Position = 45
+    Max = 0
     TabOrder = 2
   end
   object Button1: TButton
