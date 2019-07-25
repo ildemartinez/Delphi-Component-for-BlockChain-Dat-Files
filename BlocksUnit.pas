@@ -112,7 +112,6 @@ type
     // File block events
     fOnStartProcessFiles: TStartFileBlockFoundNotify;
     fOnAfterFileBlockProcessed: TFoundFileBlockNotify;
-    fOnEndProcessFiles: TEndFilesBlockFoundNotify;
 
     fOnMagicBlockFound: TFoundBlockNotify;
     fBlockProcessStep: TBlockProcessStepNotify;
@@ -130,8 +129,9 @@ type
     procedure ParseBlockFiles(const aBlocksDirectory: string);
     procedure ProcessBlock(const aBlockFile: TBlockFile);
 
-    property OnStartProc: TNotifyEvent read fOnStartProc write fOnStartProc;
-    property OnEndProc: TNotifyEvent read fOnEndProc write fOnEndProc;
+    // Inicio y fin del parseo
+    property OnStartParsing: TNotifyEvent read fOnStartProc write fOnStartProc;
+    property OnEndParsing: TNotifyEvent read fOnEndProc write fOnEndProc;
 
     // Start process all files
     property OnStartProcessFiles: TStartFileBlockFoundNotify
@@ -144,10 +144,6 @@ type
     // after a processed file
     property OnAfterFileBlockProcessed: TFoundFileBlockNotify
       read fOnAfterFileBlockProcessed write fOnAfterFileBlockProcessed;
-
-    // Process files end
-    property OnEndProcessFiles: TEndFilesBlockFoundNotify
-      read fOnEndProcessFiles write fOnEndProcessFiles;
 
     // Block found
     property OnMagicBlockFound: TFoundBlockNotify read fOnMagicBlockFound
@@ -164,11 +160,11 @@ implementation
 uses
   WinApi.Windows,
   SysUtils, dialogs, dateutils,
-  MainFormUnit, System.hash;
+  MainFormUnit, System.hash,
+  inifiles;
 
 constructor TBlocks.Create;
 begin
-
 end;
 
 procedure TBlocks.ParseBlockFiles(const aBlocksDirectory: string);
@@ -178,14 +174,18 @@ var
   aBlockFiles: tstringlist;
   k: integer;
   next: boolean;
+  files : string;
 begin
-
-  if Assigned(OnStartProc) then
-    OnStartProc(self);
+  if Assigned(OnStartParsing) then
+    OnStartParsing(self);
 
   SetCurrentDir(aBlocksDirectory);
 
-  if findfirst('blk?????.dat', faAnyFile, searchResult) = 0 then
+
+  files := 'blk?????.dat';
+  files := 'blk00196.dat';
+
+  if findfirst(files, faAnyFile, searchResult) = 0 then
   begin
     aBlockFiles := tstringlist.Create;
 
@@ -219,12 +219,10 @@ begin
         break;
     end;
 
-    if Assigned(OnEndProcessFiles) then
-      OnEndProcessFiles(aBlockFiles);
   end;
 
-  if Assigned(OnEndProc) then
-    OnEndProc(self);
+  if Assigned(OnEndParsing) then
+    OnEndParsing(self);
 end;
 
 procedure TBlocks.InternalProcessBlock(const aBlockFile: TBlockFile);

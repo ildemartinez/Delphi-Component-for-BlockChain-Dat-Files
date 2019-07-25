@@ -25,6 +25,9 @@ type
     procedure Button1Click(Sender: TObject);
   private
     { Private declarations }
+
+    fBlockFilePath: string;
+
     aBlocks: TBlocks;
     ContinueProcess: boolean;
     nblocks: uint64;
@@ -61,19 +64,20 @@ var
 implementation
 
 uses
-  dateutils;
+  datamodule, inifiles, dateutils, SeSHA256;
 
 {$R *.dfm}
 
 procedure TForm2.BeforeProcessAFile(const aBlockFile: TBlockFile;
   const actualFileBlock, TotalFiles: integer; var next: boolean);
 begin
-
+  Memo1.Lines.Add(format('Start process  %s file %d of %d',
+    [aBlockFile.aFileName, actualFileBlock, TotalFiles]));
 end;
 
 procedure TForm2.BlockProcessStep(const aPos, aSize: int64);
 begin
-  if aPos mod 5000 = 0 then
+  if aPos mod 1000 = 0 then
   begin
     ProgressBar1.Max := aSize;
     ProgressBar1.Position := aPos;
@@ -88,14 +92,17 @@ begin
 end;
 
 constructor TForm2.Create(Owner: TComponent);
+var
+  aINIFile: TIniFile;
 begin
+
   inherited;
 
   ContinueProcess := true;
 
   aBlocks := TBlocks.Create;
-  aBlocks.OnStartProc := StartProc;
-  aBlocks.OnEndProc := EndProc;
+  aBlocks.OnStartParsing := StartProc;
+  aBlocks.OnEndParsing := EndProc;
 
   aBlocks.OnStartProcessFiles := StartProcessFiles;
   aBlocks.OnEndProcessBlockFile := EndProcessBlockFile;
@@ -103,12 +110,16 @@ begin
   aBlocks.OnBeforeFileBlockProcess := BeforeProcessAFile;
   aBlocks.OnAfterFileBlockProcessed := AfterProcessAFile;
 
-  aBlocks.OnEndProcessFiles := EndFoundFileBlock;
-
   aBlocks.OnMagicBlockFound := FoundMagicBlock;
 
   aBlocks.OnBlockProcessStep := BlockProcessStep;
 
+  // Load INI file
+  aINIFile := TIniFile.Create(ExtractFilePath(Application.ExeName) + '\' +
+    'config.ini ');
+  fBlockFilePath := aINIFile.ReadString('File', 'BlockFilePath', '');
+
+  dm.dbconnection.Connected := true;
 end;
 
 procedure TForm2.EndFoundFileBlock(const aBlockFiles: tstringlist);
@@ -135,7 +146,7 @@ end;
 
 procedure TForm2.FormActivate(Sender: TObject);
 begin
-  aBlocks.ParseBlockFiles('C:\Users\ilde\AppData\Roaming\Bitcoin\blocks');
+  aBlocks.ParseBlockFiles(fBlockFilePath);
 end;
 
 procedure TForm2.AfterProcessAFile(const aBlockFile: TBlockFile;
@@ -146,7 +157,7 @@ begin
 
   lblpblocks.Caption := format('%d / %d', [actualFileBlock, TotalFiles]);
 
-  next := true;
+  // next := true;
   next := false;
 end;
 
@@ -159,61 +170,69 @@ begin
   // Performance
   inc(nblocks);
 
-  {
+  // dm.InsertBlock(aBlock);
 
-    Memo1.Lines.BeginUpdate;
-    Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: '
+  // Memo1.Lines.BeginUpdate;
+  // Memo1.Lines.Add(' Hash: ' + aBlock.hash);
+
+  Memo1.Lines.Add(' ');
+  Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: '
     + aBlock.header.DifficultyTarget.ToString + ' nonce: ' +
     aBlock.header.nonce.ToString);
-    Memo1.Lines.Add(' Hash: ' + aBlock.hash);
-    Memo1.Lines.Add(' Prev. block: ' +
+  Memo1.Lines.Add(' Hash: ' + aBlock.hash);
+  Memo1.Lines.Add(' Prev. block: ' +
     T32ToString(aBlock.header.aPreviousBlockHash));
-    Memo1.Lines.Add(' MerkleRoot: ' + T32ToString(aBlock.header.aMerkleRoot));
+  Memo1.Lines.Add(' MerkleRoot: ' + T32ToString(aBlock.header.aMerkleRoot));
+  Memo1.Lines.Add(' Transactions ' + aBlock.transactions.Count.ToString);
+  Memo1.Lines.Add(' ');
 
-    Memo1.Lines.Add(' Transactions ' + aBlock.transactions.Count.ToString);
-
-    for k := 0 to aBlock.transactions.Count - 1 do
-    begin
+  for k := 0 to aBlock.transactions.Count - 1 do
+  begin
+    Memo1.Lines.Add(' Transacción ' + inttostr(k));
     Memo1.Lines.Add(' version ' + aBlock.transactions[k].version.ToString);
 
     if aBlock.transactions[k].inputs.Count > 0 then
-    for j := 0 to aBlock.transactions[k].inputs.Count - 1 do
-    begin
-    Memo1.Lines.Add('  input ' + T32ToString(aBlock.transactions[k].inputs
-    [j].aTXID) + ' ' + aBlock.transactions[k].inputs[j].aVOUT.ToString);
+      for j := 0 to aBlock.transactions[k].inputs.Count - 1 do
+      begin
+        Memo1.Lines.Add(format('  input %s',
+          [T32ToString(aBlock.transactions[k].inputs[j].aTXID)]));
+        Memo1.Lines.Add(format('  %.8f BTC',
+          [(aBlock.transactions[k].inputs[j].aVOUT / 100000000)]));
 
-    t := '';
-    for i := 0 to aBlock.transactions[k].inputs[j].CoinBaseLength - 1 do
-    begin
-    t := t + IntToHex(aBlock.transactions[k].inputs[j].CoinBase[i]);
-    end;
-    Memo1.Lines.Add(' Coinbase: ' + t);
-
-    end;
+        t := '';
+        for i := 0 to aBlock.transactions[k].inputs[j].CoinBaseLength - 1 do
+        begin
+          t := t + IntToHex(aBlock.transactions[k].inputs[j].CoinBase[i]);
+        end;
+        Memo1.Lines.Add('  coinbase: ' + t);
+        Memo1.Lines.Add(' ');
+      end;
 
     if aBlock.transactions[k].outputs.Count > 0 then
-    for j := 0 to aBlock.transactions[k].outputs.Count - 1 do
-    begin
-    Memo1.Lines.Add('  output ' + aBlock.transactions[k].outputs[j]
-    .nValue.ToString);
+      for j := 0 to aBlock.transactions[k].outputs.Count - 1 do
+      begin
+        Memo1.Lines.Add(format('  output %.8f BTC',
+          [aBlock.transactions[k].outputs[j].nValue / 100000000]));
 
-    t := '';
-    for i := 0 to aBlock.transactions[k].outputs[j]
-    .OutputScriptLength - 1 do
-    begin
-    t := t + IntToHex(aBlock.transactions[k].outputs[j].OutputScript[i]);
-    end;
-    Memo1.Lines.Add(' Outputscript: ' + t);
-    end;
-    end;
+        t := '';
+        for i := 0 to aBlock.transactions[k].outputs[j]
+          .OutputScriptLength - 1 do
+        begin
+          t := t + IntToHex(aBlock.transactions[k].outputs[j].OutputScript[i]);
+        end;
+        Memo1.Lines.Add('  outputscript: ' + t);
+        Memo1.Lines.Add(' ');
+      end;
 
-    Memo1.Lines.EndUpdate;
+    Memo1.Lines.Add(' ');
+  end;
 
-  }
+  // Memo1.Lines.EndUpdate;
+
   Application.ProcessMessages;
   findnext := ContinueProcess;
 
-  // findnext := false;
+  findnext := false;
 end;
 
 procedure TForm2.StartProc(Sender: TObject);
