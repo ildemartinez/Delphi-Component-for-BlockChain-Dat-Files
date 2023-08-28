@@ -183,7 +183,7 @@ begin
 
 
   files := 'blk?????.dat';
-  files := 'blk00196.dat';
+  //files := 'blk00074.dat';
 
   if findfirst(files, faAnyFile, searchResult) = 0 then
   begin
@@ -364,8 +364,8 @@ begin
           end;
 
           // Fire the block found event
-          if Assigned(OnMagicBlockFound) then
-            OnMagicBlockFound(aBlock, cont);
+         // if Assigned(OnMagicBlockFound) then
+           // OnMagicBlockFound(aBlock, cont);
 
           // Free the block so user must copy or use it and forget
           aBlock.Free;
