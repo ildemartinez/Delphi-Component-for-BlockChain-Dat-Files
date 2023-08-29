@@ -37,4 +37,12 @@ object MainForm: TMainForm
     TabOrder = 1
     OnClick = Button2Click
   end
+  object Button1: TButton
+    Left = 368
+    Top = 424
+    Width = 75
+    Height = 25
+    Caption = 'Button1'
+    TabOrder = 2
+  end
 end

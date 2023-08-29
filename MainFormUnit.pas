@@ -5,7 +5,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs,
-  Vcl.StdCtrls, Vcl.ComCtrls,
+  Vcl.StdCtrls, Vcl.ComCtrls, Generics.Collections,
 
   System.Diagnostics, System.TimeSpan,
 
@@ -17,39 +17,34 @@ type
   TMainForm = class(TForm)
     Memo1: TMemo;
     Button2: TButton;
-    procedure Button1Click(Sender: TObject);
+    Button1: TButton;
     procedure FormCreate(Sender: TObject);
     procedure Button2Click(Sender: TObject);
   private
-    { Private declarations }
-    fCryptoVirtualTree: TCryptoVirtualTree;
-
     fBlockFilePath: string;
 
     aBlocks: TBlocks;
-    ContinueProcess: boolean;
     nblocks: uint64;
 
     Stopwatch: TStopwatch;
     TimeSpan: TTimeSpan;
 
   protected
-    procedure StartProc(Sender: TObject);
-    procedure EndProc(Sender: TObject);
+    procedure StartingParsingBlockFiles(Sender: TObject);
+    procedure FinishedParsingBlockFiles(Sender: TObject);
 
-    procedure StartProcessFiles(const aBlockFiles: tstringlist);
-    procedure EndFoundFileBlock(const aBlockFiles: tstringlist);
+    procedure StartProcessFiles(const aBlockFiles: TList<String>);
+    // procedure EndFoundFileBlock(const aBlockFiles: TList<String>);
 
-    procedure BeforeProcessAFile(const aBlockFile: TBlockFile; const actualFileBlock, TotalFiles: integer; var next: boolean);
+    procedure BeforeProcessAFile(const aBlockFile: TBlockFile; var next: boolean);
 
-    procedure AfterProcessAFile(const aBlockFile: TBlockFile; const actualFileBlock, TotalFiles: integer; var next: boolean);
+    procedure AfterProcessAFile(const aBlockFile: TBlockFile; var next: boolean);
 
     procedure FoundMagicBlock(const aBlock: TBlockRecord; var findnext: boolean);
     procedure BlockProcessStep(const aPos, aSize: int64);
     procedure EndProcessBlockFile(const aBlockFile: TBlockFile);
 
   public
-    { Public declarations }
     constructor Create(Owner: TComponent); override;
   end;
 
@@ -59,45 +54,43 @@ var
 implementation
 
 uses
-  datamodule, inifiles, dateutils, SeSHA256;
+  datamodule, inifiles, dateutils, SeSHA256, System.Threading;
 
 {$R *.dfm}
 
-procedure TMainForm.BeforeProcessAFile(const aBlockFile: TBlockFile; const actualFileBlock, TotalFiles: integer; var next: boolean);
+procedure TMainForm.BeforeProcessAFile(const aBlockFile: TBlockFile; var next: boolean);
 begin
-  Memo1.Lines.Add(format('Start process  %s file %d of %d', [aBlockFile.aFileName, actualFileBlock, TotalFiles]));
+  Memo1.Lines.Add(format('  Start process %s file %d of %d', [aBlockFile.aFileName, aBlockFile.aBlockNumber, aBlockFile.parent.Count]));
 end;
 
 procedure TMainForm.BlockProcessStep(const aPos, aSize: int64);
 begin
-end;
-
-procedure TMainForm.Button1Click(Sender: TObject);
-begin
-  ContinueProcess := false;
+  if (aPos mod 25) = 0 then
+    Memo1.Lines.Add(IntToStr(aPos * 100 div aSize) + '%');
 end;
 
 procedure TMainForm.Button2Click(Sender: TObject);
 begin
-  aBlocks.ParseBlockFiles(fBlockFilePath);
+  aBlocks.aBlocksDirectory := fBlockFilePath;
+  aBlocks.start;
 end;
 
 constructor TMainForm.Create(Owner: TComponent);
-var
-  aINIFile: TIniFile;
 begin
-
   inherited;
 
-  ContinueProcess := true;
+  aBlocks := TBlocks.Create(true);
+  aBlocks.FreeOnTerminate := true;
 
-  aBlocks := TBlocks.Create;
-  aBlocks.OnStartParsing := StartProc;
-  aBlocks.OnEndParsing := EndProc;
+  // Starts and ends processing all .dat files
+  aBlocks.OnStartingParsingBlockfiles := StartingParsingBlockFiles;
+  aBlocks.OnFinishedParsingBlockFiles := FinishedParsingBlockFiles;
 
+  // Starts and ends process each .dat file
   aBlocks.OnStartProcessFiles := StartProcessFiles;
-  aBlocks.OnEndProcessBlockFile := EndProcessBlockFile;
+  // aBlocks.OnEndProcessBlockFile := EndProcessBlockFile;
 
+  // Stars and ends block
   aBlocks.OnBeforeFileBlockProcess := BeforeProcessAFile;
   aBlocks.OnAfterFileBlockProcessed := AfterProcessAFile;
 
@@ -106,26 +99,26 @@ begin
   aBlocks.OnBlockProcessStep := BlockProcessStep;
 end;
 
-procedure TMainForm.EndFoundFileBlock(const aBlockFiles: tstringlist);
-var
+{ procedure TMainForm.EndFoundFileBlock(const aBlockFiles: TList<String>);
+  var
   nbsec: double;
-begin
+  begin
   TimeSpan := Stopwatch.Elapsed;
   nbsec := nblocks / TimeSpan.TotalSeconds;
   Memo1.Lines.Add(nbsec.ToString);
 
   aBlockFiles.Free;
-end;
+  end;
+}
 
-procedure TMainForm.EndProc(Sender: TObject);
+procedure TMainForm.FinishedParsingBlockFiles(Sender: TObject);
 begin
-  Memo1.Lines.Add('End parsing');
-
+  Memo1.Lines.Add(' End parsing all files');
 end;
 
 procedure TMainForm.EndProcessBlockFile(const aBlockFile: TBlockFile);
 begin
-  Memo1.Lines.Add('End processing ' + aBlockFile.aFileName);
+  Memo1.Lines.Add('  End processing ' + aBlockFile.aFileName);
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
@@ -149,9 +142,9 @@ begin
   aINIFile.Free;
 end;
 
-procedure TMainForm.AfterProcessAFile(const aBlockFile: TBlockFile; const actualFileBlock, TotalFiles: integer; var next: boolean);
+procedure TMainForm.AfterProcessAFile(const aBlockFile: TBlockFile; var next: boolean);
 begin
-  Memo1.Lines.Add('Processed ' + aBlockFile.aFileName);
+  Memo1.Lines.Add('  Processed ' + aBlockFile.aFileName);
 
   next := true;
   // next := false;
@@ -162,16 +155,18 @@ var
   k, j, i: integer;
   t: string;
 begin
+
   // Performance
   inc(nblocks);
 
-  // dm.InsertBlock(aBlock);
 
-  // Memo1.Lines.BeginUpdate;
-  // Memo1.Lines.Add(' Hash: ' + aBlock.hash);
+  // exit;
 
+  if (nblocks <> 12 ) then exit;
+
+  Memo1.Lines.Add(' Hash: ' + aBlock.hash);
   Memo1.Lines.Add(' ');
-  Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' Bits: ' + aBlock.header.DifficultyTarget.ToString + ' nonce: ' + aBlock.header.nonce.ToString);
+  Memo1.Lines.Add(datetimetostr(Unixtodatetime(aBlock.header.time)) + ' UTC ' + ' Bits: ' + aBlock.header.DifficultyTarget.ToString + ' nonce: ' + aBlock.header.nonce.ToString);
   Memo1.Lines.Add(' Hash: ' + aBlock.hash);
   Memo1.Lines.Add(' Prev. block: ' + T32ToString(aBlock.header.aPreviousBlockHash));
   Memo1.Lines.Add(' MerkleRoot: ' + T32ToString(aBlock.header.aMerkleRoot));
@@ -180,7 +175,7 @@ begin
 
   for k := 0 to aBlock.transactions.Count - 1 do
   begin
-    Memo1.Lines.Add(' Transacción ' + inttostr(k));
+    Memo1.Lines.Add(' Transacción ' + IntToStr(k));
     Memo1.Lines.Add(' version ' + aBlock.transactions[k].version.ToString);
 
     if aBlock.transactions[k].inputs.Count > 0 then
@@ -215,21 +210,16 @@ begin
     Memo1.Lines.Add(' ');
   end;
 
-  // Memo1.Lines.EndUpdate;
-
-  findnext := ContinueProcess;
- // findnext := false;
-
 end;
 
-procedure TMainForm.StartProc(Sender: TObject);
+procedure TMainForm.StartingParsingBlockFiles(Sender: TObject);
 begin
-  Memo1.Lines.Add('Start parsing');
+  Memo1.Lines.Add('Start parsing component');
 end;
 
-procedure TMainForm.StartProcessFiles(const aBlockFiles: tstringlist);
+procedure TMainForm.StartProcessFiles(const aBlockFiles: TList<String>);
 begin
-  Memo1.Lines.Add('Block files found to process ' + aBlockFiles.Count.ToString);
+  Memo1.Lines.Add(' Block files found to process ' + aBlockFiles.Count.ToString);
   nblocks := 0;
 
   Stopwatch := TStopwatch.StartNew;

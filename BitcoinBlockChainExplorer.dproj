@@ -130,6 +130,7 @@
         </DCCReference>
         <DCCReference Include="BlocksUnit.pas"/>
         <DCCReference Include="SeSHA256.pas"/>
+        <DCCReference Include="ThreadUnit.pas"/>
         <None Include="config.ini"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
